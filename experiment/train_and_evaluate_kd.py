@@ -21,7 +21,6 @@ from pose.utils.imutils import batch_with_heatmap
 import pose.models as models
 import pose.datasets as datasets
 
-
 # get model names and dataset names
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -40,17 +39,30 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
 
 
-def train(train_loader, model, criterion, optimizer, debug=False):
+def load_teacher_models(arch, blocks, stacks, t_checkpoint, num_classes):
+    tmodel = models.__dict__[arch](num_stacks=stacks, num_blocks=blocks,
+                                   num_classes=num_classes)
+    tmodel = torch.nn.DataParallel(tmodel).cuda()
+
+    t_checkpoint = torch.load(t_checkpoint)
+    tmodel.load_state_dict(t_checkpoint['state_dict'])
+    tmodel.eval()
+    return tmodel
+
+
+def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, debug=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    kd_losses = AverageMeter()
+    gt_losses = AverageMeter()
     acces = AverageMeter()
 
     model.train()
 
     end = time.time()
 
-    gt_win, pred_win = None, None
+    gt_win, pred_win, pred_teacher = None, None, None
     bar = Bar('Training', max=len(train_loader))
 
     for i, (inputs, target, meta) in enumerate(train_loader):
@@ -60,16 +72,23 @@ def train(train_loader, model, criterion, optimizer, debug=False):
 
         # compute output
         output = model(inputs)
-        if type(output) == list:  # multiple output
-            loss = 0
-            for o in output:
-                loss += criterion(o, target)
-            output = output[-1]
-        else:
-            raise ValueError('Format failed!!!')
-        acc = accuracy(output, target, idx)
+        score_map = output[-1]
 
-        if debug: # visualize groundtruth and predictions
+        t_output = t_model(inputs)
+        t_output = t_output[-1].detach()  # 4D [batch,  num_classes, out_res, out_res]
+
+        gt_loss = torch.tensor(0.0).cuda()
+        kd_loss = torch.tensor(0.0).cuda()
+
+        for j in range(0, len(output)):
+            _output = output[j]
+            kd_loss += criterion(_output, t_output)
+            gt_loss += criterion(_output, target)
+        acc = accuracy(score_map, target, idx)
+        # This is confirmed from the source code of the authors. This is weighted sum of loss from each heat-map
+        total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
+
+        if debug:  # visualize ground-truth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
             pred_batch_img = batch_with_heatmap(inputs, output)
             if not gt_win or not pred_win:
@@ -86,12 +105,14 @@ def train(train_loader, model, criterion, optimizer, debug=False):
             plt.draw()
 
         # measure accuracy and record loss
-        losses.update(loss.item(), inputs.size(0))
+        kd_losses.update(kd_loss.item(), inputs.size(0))
+        gt_losses.update(gt_loss.item(), inputs.size(0))
+        losses.update(total_loss.item(), inputs.size(0))
         acces.update(acc[0], inputs.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
         # measure elapsed time
@@ -115,7 +136,8 @@ def train(train_loader, model, criterion, optimizer, debug=False):
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False):
+def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, out_res=64, debug=False):
+
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -129,22 +151,28 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
 
     gt_win, pred_win = None, None
     end = time.time()
-    bar = Bar('Evaluating ', max=len(val_loader))
+    bar = Bar('Evaluating', max=len(val_loader))
     with torch.no_grad():
         for i, (inputs, target, meta) in enumerate(val_loader):
             # measure data loading time
             data_time.update(time.time() - end)
             inputs = inputs.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
+
+            t_output = t_model(inputs)[-1].detach()
+
             output = model(inputs)
             score_map = output[-1].cpu() if type(output) == list else output.cpu()
 
-            if type(output) == list:  # multiple output
-                loss = 0
-                for o in output:
-                    loss += criterion(o, target)
-            else:  # single output
-                raise ValueError('Format failed!!!')
+            gt_loss = torch.tensor(0.0).cuda()
+            kd_loss = torch.tensor(0.0).cuda()
+
+            for j in range(0, len(output)):
+                _output = output[j]
+                kd_loss += criterion(_output, t_output)
+                gt_loss += criterion(_output, target)
+
+            total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
             acc = accuracy(score_map, target.cpu(), idx)
 
@@ -167,7 +195,7 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
                 plt.draw()
 
             # measure accuracy and record loss
-            losses.update(loss.item(), inputs.size(0))
+            losses.update(total_loss.item(), inputs.size(0))
             acces.update(acc[0], inputs.size(0))
 
             # measure elapsed time
@@ -212,11 +240,13 @@ def main(args):
                                        num_classes=njoints)
 
     model = torch.nn.DataParallel(model).to(device)
-    criterion = torch.nn.MSELoss(size_average=True).to(device)
+    criterion = torch.nn.MSELoss(size_average=True).cuda()
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=args.lr,
                                     momentum=args.momentum,
                                     weight_decay=args.weight_decay)
+
+    # TODO: load t_model and check parameters of train and validate function
 
     # optionally resume from a checkpoint
     title = args.dataset + ' ' + args.arch
@@ -260,8 +290,7 @@ def main(args):
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
-        loss, acc, predictions = validate(val_loader, model, criterion, njoints, out_res=args.out_res,
-                                          debug=args.debug)
+        loss, acc, predictions = validate(val_loader=val_loader, model=model)
         save_pred(predictions, checkpoint=args.checkpoint)
         return
 
@@ -282,7 +311,7 @@ def main(args):
 
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader, model, criterion,
-                                                      njoints, out_res=args.out_res, debug=args.debug)
+                                                      njoints, args.debug)
 
         # append logger file
         logger.append([epoch + 1, lr, train_loss, valid_loss, train_acc, valid_acc])
@@ -304,8 +333,8 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-    # Dataset setting
+    parser = argparse.ArgumentParser(description='PyTorch Training')
+
     parser.add_argument('--dataset', metavar='DATASET', default='mpii',
                         choices=dataset_names,
                         help='Datasets: ' +
@@ -315,10 +344,14 @@ if __name__ == '__main__':
                         help='path to images')
     parser.add_argument('--anno-path', default='', type=str,
                         help='path to annotation (json)')
+
+    parser.add_argument('--year', default=2014, type=int, metavar='N',
+                        help='year of coco dataset: 2014 (default) | 2017)')
     parser.add_argument('--inp-res', default=256, type=int,
                         help='input resolution (default: 256)')
     parser.add_argument('--out-res', default=64, type=int,
                         help='output resolution (default: 64, to gen GT)')
+    parser.add_argument("--teacher-stacks", type=int)
 
     # Model structure
     parser.add_argument('--arch', '-a', metavar='ARCH', default='hg',
@@ -328,10 +361,12 @@ if __name__ == '__main__':
                              ' (default: hg)')
     parser.add_argument('-s', '--stacks', default=8, type=int, metavar='N',
                         help='Number of hourglasses to stack')
+    # parser.add_argument('--features', default=256, type=int, metavar='N',
+    #                     help='Number of features in the hourglass')
     parser.add_argument('-b', '--blocks', default=1, type=int, metavar='N',
                         help='Number of residual modules at each location in the hourglass')
 
-    # training strategy
+    # Training strategy
     parser.add_argument('--solver', metavar='SOLVER', default='rms',
                         choices=['rms', 'adam'],
                         help='optimizers')
@@ -355,6 +390,11 @@ if __name__ == '__main__':
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='LR is multiplied by gamma on schedule.')
+    # parser.add_argument('--target-weight', dest='target_weight',
+    #                     action='store_true',
+    #                     help='Loss with target_weight')
+    parser.add_argument('--kdloss-alpha', type=float, default=0.5,
+                        help='coefficient for kdloss')
 
     # Data processing
     parser.add_argument('-f', '--flip', dest='flip', action='store_true',
@@ -370,7 +410,6 @@ if __name__ == '__main__':
     parser.add_argument('--label-type', metavar='LABELTYPE', default='Gaussian',
                         choices=['Gaussian', 'Cauchy'],
                         help='Labelmap dist type: (default=Gaussian)')
-
     # Miscs
     parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metavar='PATH',
                         help='path to save checkpoint (default: checkpoint)')
@@ -382,7 +421,7 @@ if __name__ == '__main__':
                         help='evaluate model on validation set')
     parser.add_argument('-d', '--debug', dest='debug', action='store_true',
                         help='show intermediate results')
+    parser.add_argument('--teacher-checkpoint', metavar='PATH',
+                        help='path to teacher checkpoint')
 
     main(parser.parse_args())
-
-

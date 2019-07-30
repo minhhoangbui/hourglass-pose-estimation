@@ -1,13 +1,13 @@
 from __future__ import print_function
 import math
-from .misc import *
 from .transform import *
 
-__all__ = ['accuracy', 'AverageMeter']
+__all__ = ['accuracy', 'AverageMeter', 'final_preds']
 
 
 def get_preds(scores):
-    """ get predictions from score maps in torch Tensor
+    """ Input: score maps in torch Tensor [batch, njoint, height, width]
+        Output: coords of joint [batch, njoint, x, y]
         return type: torch.LongTensor
     """
     assert scores.dim() == 4, 'Score maps should be 4-dim'
@@ -111,3 +111,4 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+

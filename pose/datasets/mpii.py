@@ -96,7 +96,7 @@ class MPII(data.Dataset):
             img[1, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
             img[2, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
 
-        # Prepare image and groundtruth map
+        # Prepare image and ground-truth map
         inp = crop(img, c, s, [self.inp_res, self.inp_res], rot=r)
         inp = color_normalize(inp, self.mean, self.std)
 

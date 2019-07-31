@@ -33,7 +33,6 @@ dataset_names = sorted(name for name in datasets.__dict__
 
 # init global variables
 best_acc = 0
-idx = []
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
@@ -84,7 +83,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, debu
             _output = output[j]
             kd_loss += criterion(_output, t_output)
             gt_loss += criterion(_output, target)
-        acc = accuracy(score_map, target, idx)
+        acc = accuracy(score_map, target)
         # This is confirmed from the source code of the authors. This is weighted sum of loss from each heat-map
         total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
@@ -174,7 +173,7 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, o
 
             total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
-            acc = accuracy(score_map, target.cpu(), idx)
+            acc = accuracy(score_map, target.cpu())
 
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
@@ -239,14 +238,16 @@ def main(args):
                                        num_blocks=args.blocks,
                                        num_classes=njoints)
 
+    print("==> creating teacher model '{}', stacks={}, blocks={}".format(args.arch, args.teacher_stacks, args.blocks))
+    tmodel = load_teacher_models(arch=args.arch, blocks=args.blocks, stacks=args.teacher_stacks,
+                                 t_checkpoint=args.teacher_checkpoint, num_classes=njoints)
+
     model = torch.nn.DataParallel(model).to(device)
     criterion = torch.nn.MSELoss(size_average=True).cuda()
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=args.lr,
                                     momentum=args.momentum,
                                     weight_decay=args.weight_decay)
-
-    # TODO: load t_model and check parameters of train and validate function
 
     # optionally resume from a checkpoint
     title = args.dataset + ' ' + args.arch
@@ -290,7 +291,9 @@ def main(args):
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
-        loss, acc, predictions = validate(val_loader=val_loader, model=model)
+        loss, acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
+                                          criterion=criterion, num_classes=njoints,
+                                          kdloss_alpha=args.kdloss_alpha, out_res=args.out_res, debug=args.debug)
         save_pred(predictions, checkpoint=args.checkpoint)
         return
 
@@ -306,12 +309,14 @@ def main(args):
             val_loader.dataset.sigma *= args.sigma_decay
 
         # train for one epoch
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer,
-                                      args.debug)
+        train_loss, train_acc = train(train_loader=train_loader, model=model, t_model=tmodel, criterion=criterion,
+                                      kdloss_alpha=args.kdloss_alpha, optimizer=optimizer, debug=args.debug)
 
         # evaluate on validation set
-        valid_loss, valid_acc, predictions = validate(val_loader, model, criterion,
-                                                      njoints, args.debug)
+        valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
+                                                      criterion=criterion, num_classes=njoints,
+                                                      kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
+                                                      debug=args.debug)
 
         # append logger file
         logger.append([epoch + 1, lr, train_loss, valid_loss, train_acc, valid_acc])

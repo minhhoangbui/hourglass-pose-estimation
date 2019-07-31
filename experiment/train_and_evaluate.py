@@ -34,7 +34,6 @@ dataset_names = sorted(name for name in datasets.__dict__
 
 # init global variables
 best_acc = 0
-idx = []
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
@@ -67,7 +66,7 @@ def train(train_loader, model, criterion, optimizer, debug=False):
             output = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(output, target, idx)
+        acc = accuracy(output, target)
 
         if debug: # visualize groundtruth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
@@ -137,16 +136,16 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
             inputs = inputs.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(inputs)
-            score_map = output[-1].cpu() if type(output) == list else output.cpu()
 
             if type(output) == list:  # multiple output
                 loss = 0
                 for o in output:
                     loss += criterion(o, target)
+                score_map = output[-1].cpu()
             else:  # single output
                 raise ValueError('Format failed!!!')
 
-            acc = accuracy(score_map, target.cpu(), idx)
+            acc = accuracy(score_map, target.cpu())
 
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
@@ -382,6 +381,7 @@ if __name__ == '__main__':
                         help='evaluate model on validation set')
     parser.add_argument('-d', '--debug', dest='debug', action='store_true',
                         help='show intermediate results')
+
 
     main(parser.parse_args())
 

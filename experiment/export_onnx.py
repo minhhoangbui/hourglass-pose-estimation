@@ -53,7 +53,7 @@ if __name__ == '__main__':
                         choices=model_names,
                         help='model architecture: ' +
                              ' | '.join(model_names) +
-                             ' (default: resnet18)')
+                             ' (default: hg)')
     parser.add_argument('-s', '--stacks', default=8, type=int, metavar='N',
                         help='Number of hourglasses to stack')
     parser.add_argument('-b', '--blocks', default=1, type=int, metavar='N',

@@ -5,7 +5,7 @@ import torch
 import torch.nn.parallel
 import torch.optim
 import os
-import _init_path
+import experiment._init_path
 import pose.models as models
 
 model_names = sorted(name for name in models.__dict__
@@ -43,7 +43,7 @@ def main(args):
         print("=> no checkpoint found at '{}'".format(args.checkpoint))
 
     dummy_input = torch.randn(1, 3, args.in_res, args.in_res)
-    torch.onnx.export(model, dummy_input, os.path.join(args.out_onnx, 'pose_model.onnx'))
+    torch.onnx.export(model, dummy_input, args.out_onnx)
 
 
 if __name__ == '__main__':

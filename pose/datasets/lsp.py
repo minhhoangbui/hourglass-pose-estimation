@@ -1,6 +1,6 @@
 from __future__ import print_function, absolute_import
 
-import os
+import random
 import json
 
 import torch.utils.data as data
@@ -19,7 +19,7 @@ class LSP(data.Dataset):
 
     def __init__(self, is_train=True, **kwargs):
         self.img_folder = kwargs['image_path']  # root image folders
-        self.jsonfile = kwargs['anno_path']
+        self.jsonfile = os.path.join(kwargs['anno_path'], 'LEEDS_annotations.json')
         self.is_train = is_train           # training set or test set
         self.inp_res = kwargs['inp_res']
         self.out_res = kwargs['out_res']
@@ -90,6 +90,14 @@ class LSP(data.Dataset):
         img = load_image(img_path)  # CxHxW
 
         r = 0
+        if self.is_train:
+            s = s*torch.randn(1).mul_(sf).add_(1).clamp(1-sf, 1+sf)[0]
+            r = torch.randn(1).mul_(rf).clamp(-2*rf, 2*rf)[0] if random.random() <= 0.6 else 0
+
+            # Color
+            img[0, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
+            img[1, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
+            img[2, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
 
         # Prepare image and groundtruth map
         inp = crop(img, c, s, [self.inp_res, self.inp_res], rot=r)

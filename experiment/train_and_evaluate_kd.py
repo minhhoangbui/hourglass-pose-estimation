@@ -220,12 +220,6 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, o
 
 def main(args):
     global best_acc
-    global idx
-
-    if args.dataset in ['mpii', 'lsp']:
-        idx = [1, 2, 3, 4, 5, 6, 11, 12, 15, 16]
-    else:
-        raise ValueError('Unsupported dataset')
 
     if not os.path.isdir(args.checkpoint):
         os.makedirs(args.checkpoint)
@@ -349,9 +343,6 @@ if __name__ == '__main__':
                         help='path to images')
     parser.add_argument('--anno-path', default='', type=str,
                         help='path to annotation (json)')
-
-    parser.add_argument('--year', default=2014, type=int, metavar='N',
-                        help='year of coco dataset: 2014 (default) | 2017)')
     parser.add_argument('--inp-res', default=256, type=int,
                         help='input resolution (default: 256)')
     parser.add_argument('--out-res', default=64, type=int,
@@ -366,8 +357,6 @@ if __name__ == '__main__':
                              ' (default: hg)')
     parser.add_argument('-s', '--stacks', default=8, type=int, metavar='N',
                         help='Number of hourglasses to stack')
-    # parser.add_argument('--features', default=256, type=int, metavar='N',
-    #                     help='Number of features in the hourglass')
     parser.add_argument('-b', '--blocks', default=1, type=int, metavar='N',
                         help='Number of residual modules at each location in the hourglass')
 
@@ -381,9 +370,9 @@ if __name__ == '__main__':
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('--train-batch', default=6, type=int, metavar='N',
+    parser.add_argument('--train-batch', default=16, type=int, metavar='N',
                         help='train batchsize')
-    parser.add_argument('--test-batch', default=6, type=int, metavar='N',
+    parser.add_argument('--test-batch', default=16, type=int, metavar='N',
                         help='test batchsize')
     parser.add_argument('--lr', '--learning-rate', default=2.5e-4, type=float,
                         metavar='LR', help='initial learning rate')
@@ -395,9 +384,6 @@ if __name__ == '__main__':
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='LR is multiplied by gamma on schedule.')
-    # parser.add_argument('--target-weight', dest='target_weight',
-    #                     action='store_true',
-    #                     help='Loss with target_weight')
     parser.add_argument('--kdloss-alpha', type=float, default=0.5,
                         help='coefficient for kdloss')
 

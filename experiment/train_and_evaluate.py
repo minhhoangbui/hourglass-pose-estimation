@@ -63,12 +63,12 @@ def train(train_loader, model, criterion, optimizer, debug=False):
             loss = 0
             for o in output:
                 loss += criterion(o, target)
-            output = output[-1]
+            score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(output, target)
+        acc = accuracy(score_map, target)
 
-        if debug: # visualize groundtruth and predictions
+        if debug:  # visualize groundtruth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
             pred_batch_img = batch_with_heatmap(inputs, output)
             if not gt_win or not pred_win:
@@ -192,12 +192,6 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
 
 def main(args):
     global best_acc
-    global idx
-
-    if args.dataset in ['mpii', 'lsp']:
-        idx = [1, 2, 3, 4, 5, 6, 11, 12, 15, 16]
-    else:
-        raise ValueError('Unsupported dataset')
 
     if not os.path.isdir(args.checkpoint):
         os.makedirs(args.checkpoint)

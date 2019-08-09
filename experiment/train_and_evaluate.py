@@ -202,7 +202,8 @@ def main(args):
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
-                                       num_classes=njoints)
+                                       num_classes=njoints,
+                                       mobile=args.mobile)
 
     model = torch.nn.DataParallel(model).to(device)
     criterion = torch.nn.MSELoss(size_average=True).to(device)
@@ -323,6 +324,8 @@ if __name__ == '__main__':
                         help='Number of hourglasses to stack')
     parser.add_argument('-b', '--blocks', default=1, type=int, metavar='N',
                         help='Number of residual modules at each location in the hourglass')
+    parser.add_argument('--mobile', action='store_true',
+                        help='Decide to use mobile architecture')
 
     # training strategy
     parser.add_argument('--solver', metavar='SOLVER', default='rms',

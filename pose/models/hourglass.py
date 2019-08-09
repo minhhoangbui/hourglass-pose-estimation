@@ -7,14 +7,18 @@ __all__ = ['HourglassNet', 'hg']
 class Bottleneck(nn.Module):
     expansion = 2
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, mobile=False):
         super(Bottleneck, self).__init__()
 
         self.bn1 = nn.BatchNorm2d(inplanes)
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=True)
         self.bn2 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-                               padding=1, bias=True)
+        if mobile:
+            self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                                   padding=1, bias=True, groups=planes)
+        else:
+            self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                                   padding=1, bias=True)
         self.bn3 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 2, kernel_size=1, bias=True)
         self.relu = nn.ReLU(inplace=True)

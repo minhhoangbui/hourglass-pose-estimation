@@ -16,7 +16,8 @@ model_names = sorted(name for name in models.__dict__
 def main(args):
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
-    model = models.__dict__[args.arch](num_stacks=args.stacks, num_blocks=args.blocks, num_classes=args.num_classes)
+    model = models.__dict__[args.arch](num_stacks=args.stacks, num_blocks=args.blocks, num_classes=args.num_classes,
+                                       mobile=args.mobile)
     model.eval()
 
     # optionally resume from a checkpoint
@@ -66,4 +67,6 @@ if __name__ == '__main__':
                         help='pre-trained model checkpoint')
     parser.add_argument('--in-res', required=True, type=int, metavar='N',
                         help='input shape 128 or 256')
+    parser.add_argument('--mobile', action='store_true',
+                        help='Decide to use mobile architecture')
     main(parser.parse_args())

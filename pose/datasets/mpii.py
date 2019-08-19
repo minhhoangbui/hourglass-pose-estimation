@@ -1,5 +1,8 @@
 from __future__ import absolute_import, print_function
-
+"""
+(0 - r ankle, 1 - r knee, 2 - r hip, 3 - l hip, 4 - l knee, 5 - l ankle, 6 - pelvis, 7 - thorax, 
+8 - upper neck, 9 - head top, 10 - r wrist, 11 - r elbow, 12 - r shoulder, 13 - l shoulder, 14 - l elbow, 15 - l wrist)
+"""
 import json
 import random
 import torch.utils.data as data
@@ -18,6 +21,7 @@ class MPII(data.Dataset):
         self.scale_factor = kwargs['scale_factor']
         self.rot_factor = kwargs['rot_factor']
         self.label_type = kwargs['label_type']
+        self.subset = kwargs['subset']
 
         with open(self.json_file) as anno_file:
             self.anno = json.load(anno_file)
@@ -76,7 +80,9 @@ class MPII(data.Dataset):
             s = s * 1.25
 
         # For single-person pose estimation with a centered/scaled figure
-        nparts = pts.size(0)
+
+        n_parts = pts.size(0) if self.subset is None else len(self.subset)
+
         img = load_image(img_path)  # CxHxW
 
         r = 0
@@ -101,19 +107,18 @@ class MPII(data.Dataset):
 
         # Generate ground truth
         tpts = pts.clone()
-        target = torch.zeros(nparts, self.out_res, self.out_res)
-        target_weight = tpts[:, 2].clone().view(nparts, 1)
+        target = torch.zeros(n_parts, self.out_res, self.out_res)
 
-        for i in range(nparts):
+        for i in range(n_parts):
             # if tpts[i, 2] > 0: # This is evil!!
-            if tpts[i, 1] > 0:
-                tpts[i, 0:2] = to_torch(transform(tpts[i, 0:2]+1, c, s, [self.out_res, self.out_res], rot=r))
-                target[i], vis = draw_labelmap(target[i], tpts[i]-1, self.sigma, type=self.label_type)
-                target_weight[i, 0] *= vis
+            if tpts[self.subset[i], 1] > 0:
+                tpts[self.subset[i], 0:2] = to_torch(transform(tpts[self.subset[i], 0:2]+1, c, s,
+                                                               [self.out_res, self.out_res], rot=r))
+                target[i], _ = draw_labelmap(target[i], tpts[self.subset[i]]-1, self.sigma, type=self.label_type)
 
         # Meta info
         meta = {'index': index, 'center': c, 'scale': s,
-                'pts': pts, 'tpts': tpts, 'target_weight': target_weight}
+                'pts': pts, 'tpts': tpts}
 
         return inp, target, meta
 

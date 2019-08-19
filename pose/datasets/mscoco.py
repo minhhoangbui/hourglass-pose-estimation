@@ -1,5 +1,25 @@
 from __future__ import print_function, absolute_import
-import os
+'''
+    "keypoints": {
+        0: "nose",
+        1: "left_eye",
+        2: "right_eye",
+        3: "left_ear",
+        4: "right_ear",
+        5: "left_shoulder",
+        6: "right_shoulder",
+        7: "left_elbow",
+        8: "right_elbow",
+        9: "left_wrist",
+        10: "right_wrist",
+        11: "left_hip",
+        12: "right_hip",
+        13: "left_knee",
+        14: "right_knee",
+        15: "left_ankle",
+        16: "right_ankle"
+    },
+'''
 import json
 import random
 import torch.utils.data as data
@@ -16,6 +36,7 @@ class MSCOCO(data.Dataset):
         self.scale_factor = kwargs['scale_factor']
         self.rot_factor = kwargs['rot_factor']
         self.label_type = kwargs['label_type']
+        self.subset = kwargs['subset']
 
         if is_train:
             self.img_folder = os.path.join(kwargs['image_path'], 'train2017')    # root image folders
@@ -86,7 +107,9 @@ class MSCOCO(data.Dataset):
             s = s * 1.25
 
         # For single-person pose estimation with a centered/scaled figure
-        nparts = pts.size(0)
+
+        n_parts = pts.size(0) if self.subset is None else len(self.subset)
+
         img = load_image(img_path)  # CxHxW
 
         r = 0
@@ -111,11 +134,13 @@ class MSCOCO(data.Dataset):
 
         # Generate ground truth
         tpts = pts.clone()
-        target = torch.zeros(nparts, self.out_res, self.out_res)
-        for i in range(nparts):
-            if tpts[i, 2] > 0:  # COCO visible: 0-no label, 1-label + invisible, 2-label + visible
-                tpts[i, 0:2] = to_torch(transform(tpts[i, 0:2]+1, c, s, [self.out_res, self.out_res], rot=r))
-                target[i], _ = draw_labelmap(target[i], tpts[i]-1, self.sigma, type=self.label_type)
+        target = torch.zeros(n_parts, self.out_res, self.out_res)
+        for i in range(n_parts):
+            if tpts[self.subset[i], 2] > 0:  # COCO visible: 0-no label, 1-label + invisible, 2-label + visible
+                tpts[self.subset[i], 0:2] = to_torch(transform(tpts[self.subset[i], 0:2]+1, c, s,
+                                                               [self.out_res, self.out_res], rot=r))
+                target[i], _ = draw_labelmap(target[i], tpts[self.subset[i]]-1, self.sigma, type=self.label_type)
+
 
         # Meta info
         meta = {'index': index, 'center': c, 'scale': s,

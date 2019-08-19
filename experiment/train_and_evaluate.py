@@ -39,7 +39,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
 
 
-def train(train_loader, model, criterion, optimizer, debug=False):
+def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -66,7 +66,7 @@ def train(train_loader, model, criterion, optimizer, debug=False):
             score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(score_map, target)
+        acc = accuracy(score_map, target, idxs=idxs)
 
         if debug:  # visualize groundtruth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
@@ -114,7 +114,7 @@ def train(train_loader, model, criterion, optimizer, debug=False):
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False):
+def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, debug=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -145,7 +145,7 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
             else:  # single output
                 raise ValueError('Format failed!!!')
 
-            acc = accuracy(score_map, target.cpu())
+            acc = accuracy(score_map, target.cpu(), idxs=idxs)
 
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
@@ -193,16 +193,20 @@ def validate(val_loader, model, criterion, num_classes, out_res=64, debug=False)
 def main(args):
     global best_acc
 
-    if not os.path.isdir(args.checkpoint):
-        os.makedirs(args.checkpoint)
+    checkpoint_path = os.path.join(args.checkpoint, '{}_s{}_b{}_{}'.format(args.dataset, args.stacks,
+                                                                           args.blocks, args.subset))
+
+    if not os.path.isdir(checkpoint_path):
+        os.makedirs(checkpoint_path)
 
     # create model
-    njoints = datasets.__dict__[args.dataset].njoints
+
+    n_joints = datasets.__dict__[args.dataset].njoints if args.subset is None else len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
-                                       num_classes=njoints,
+                                       num_classes=n_joints,
                                        mobile=args.mobile)
 
     model = torch.nn.DataParallel(model).to(device)
@@ -254,8 +258,9 @@ def main(args):
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
-        loss, acc, predictions = validate(val_loader, model, criterion, njoints, out_res=args.out_res,
-                                          debug=args.debug)
+        loss, acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
+                                          num_classes=n_joints, out_res=args.out_res,
+                                          debug=args.debug, idxs=args.subset)
         save_pred(predictions, checkpoint=args.checkpoint)
         return
 
@@ -271,12 +276,13 @@ def main(args):
             val_loader.dataset.sigma *= args.sigma_decay
 
         # train for one epoch
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer,
-                                      args.debug)
+        train_loss, train_acc = train(train_loader=train_loader, model=model, criterion=criterion,
+                                      optimizer=optimizer, idxs=args.subset, debug=args.debug)
 
         # evaluate on validation set
-        valid_loss, valid_acc, predictions = validate(val_loader, model, criterion,
-                                                      njoints, out_res=args.out_res, debug=args.debug)
+        valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
+                                                      num_classes=n_joints, out_res=args.out_res, debug=args.debug,
+                                                      idxs=args.subset)
 
         # append logger file
         logger.append([epoch + 1, lr, train_loss, valid_loss, train_acc, valid_acc])
@@ -326,6 +332,8 @@ if __name__ == '__main__':
                         help='Number of residual modules at each location in the hourglass')
     parser.add_argument('--mobile', action='store_true',
                         help='Decide to use mobile architecture')
+    parser.add_argument('--subset', type=int, nargs='+', default=None,
+                        help='Decide subset when training or evaluating')
 
     # training strategy
     parser.add_argument('--solver', metavar='SOLVER', default='rms',

@@ -49,7 +49,7 @@ def load_teacher_models(arch, blocks, stacks, t_checkpoint, num_classes):
     return tmodel
 
 
-def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, debug=False):
+def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs=None, debug=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -83,7 +83,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, debu
             _output = output[j]
             kd_loss += criterion(_output, t_output)
             gt_loss += criterion(_output, target)
-        acc = accuracy(score_map, target)
+        acc = accuracy(score_map, target, idxs=idxs)
         # This is confirmed from the source code of the authors. This is weighted sum of loss from each heat-map
         total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
@@ -135,7 +135,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, debu
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, out_res=64, debug=False):
+def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, idxs=None, out_res=64, debug=False):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -173,7 +173,7 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, o
 
             total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
-            acc = accuracy(score_map, target.cpu())
+            acc = accuracy(score_map, target.cpu(), idxs=idxs)
 
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
@@ -221,21 +221,24 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, o
 def main(args):
     global best_acc
 
-    if not os.path.isdir(args.checkpoint):
-        os.makedirs(args.checkpoint)
+    checkpoint_path = os.path.join(args.checkpoint, '{}_s{}_b{}_{}'.format(args.dataset, args.stacks,
+                                                                           args.blocks, args.subset))
+
+    if not os.path.isdir(checkpoint_path):
+        os.makedirs(checkpoint_path)
 
     # create model
-    njoints = datasets.__dict__[args.dataset].njoints
+    n_joints = datasets.__dict__[args.dataset].njoints if args.subset is None else len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
-                                       num_classes=njoints,
+                                       num_classes=n_joints,
                                        mobile=args.mobile)
 
     print("==> creating teacher model '{}', stacks={}, blocks={}".format(args.arch, args.teacher_stacks, args.blocks))
     tmodel = load_teacher_models(arch=args.arch, blocks=args.blocks, stacks=args.teacher_stacks,
-                                 t_checkpoint=args.teacher_checkpoint, num_classes=njoints)
+                                 t_checkpoint=args.teacher_checkpoint, num_classes=n_joints)
 
     model = torch.nn.DataParallel(model).to(device)
     criterion = torch.nn.MSELoss(size_average=True).cuda()
@@ -287,7 +290,7 @@ def main(args):
     if args.evaluate:
         print('\nEvaluation only')
         loss, acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
-                                          criterion=criterion, num_classes=njoints,
+                                          criterion=criterion, num_classes=n_joints,
                                           kdloss_alpha=args.kdloss_alpha, out_res=args.out_res, debug=args.debug)
         save_pred(predictions, checkpoint=args.checkpoint)
         return
@@ -309,7 +312,7 @@ def main(args):
 
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
-                                                      criterion=criterion, num_classes=njoints,
+                                                      criterion=criterion, num_classes=n_joints,
                                                       kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
                                                       debug=args.debug)
 
@@ -362,6 +365,8 @@ if __name__ == '__main__':
                         help='Number of residual modules at each location in the hourglass')
     parser.add_argument('--mobile', action='store_true',
                         help='Decide to use mobile architecture')
+    parser.add_argument('--subset', type=int, nargs='+', default=None,
+                        help='Decide subset when training or evaluating')
 
     # Training strategy
     parser.add_argument('--solver', metavar='SOLVER', default='rms',

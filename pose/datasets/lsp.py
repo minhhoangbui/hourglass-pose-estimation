@@ -27,6 +27,7 @@ class LSP(data.Dataset):
         self.scale_factor = kwargs['scale_factor']
         self.rot_factor = kwargs['rot_factor']
         self.label_type = kwargs['label_type']
+        self.subset = kwargs['subset']
 
         # create train/val split
         with open(self.jsonfile) as anno_file:
@@ -86,7 +87,7 @@ class LSP(data.Dataset):
             s = s * 1.4375
 
         # For single-person pose estimation with a centered/scaled figure
-        nparts = pts.size(0)
+        n_parts = pts.size(0) if self.subset is None else len(self.subset)
         img = load_image(img_path)  # CxHxW
 
         r = 0
@@ -105,13 +106,14 @@ class LSP(data.Dataset):
 
         # Generate ground truth
         tpts = pts.clone()
-        target = torch.zeros(nparts, self.out_res, self.out_res)
+        target = torch.zeros(n_parts, self.out_res, self.out_res)
 
-        for i in range(nparts):
+        for i in range(n_parts):
             # if tpts[i, 2] > 0: # This is evil!!
-            if tpts[i, 1] > 0:
-                tpts[i, 0:2] = to_torch(transform(tpts[i, 0:2]+1, c, s, [self.out_res, self.out_res], rot=r))
-                target[i], _ = draw_labelmap(target[i], tpts[i]-1, self.sigma, type=self.label_type)
+            if tpts[self.subset[i], 1] > 0:
+                tpts[self.subset[i], 0:2] = to_torch(transform(tpts[self.subset[i], 0:2]+1, c, s,
+                                                               [self.out_res, self.out_res], rot=r))
+                target[i], _ = draw_labelmap(target[i], tpts[self.subset[i]]-1, self.sigma, type=self.label_type)
 
         # Meta info
         meta = {'index': index, 'center': c, 'scale': s,

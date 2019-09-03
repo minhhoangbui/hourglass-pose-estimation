@@ -278,9 +278,6 @@ def main(args):
         logger.set_names(['Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
 
-    print('    Total params: %.2fM'
-          % (sum(p.numel() for p in model.parameters()) / 1000000.0))
-
     # create data loader
     train_dataset = datasets.__dict__[args.dataset](is_train=True, **vars(args))
     train_loader = torch.utils.data.DataLoader(
@@ -402,7 +399,7 @@ if __name__ == '__main__':
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='LR is multiplied by gamma on schedule.')
-    parser.add_argument('--kdloss-alpha', type=float, default=0.5,
+    parser.add_argument('--kdloss-alpha', type=float, default=0.3,
                         help='coefficient for kdloss')
 
     # Data processing

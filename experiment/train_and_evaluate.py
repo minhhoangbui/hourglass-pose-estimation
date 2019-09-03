@@ -20,6 +20,8 @@ from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
 from pose.utils.imutils import batch_with_heatmap
 import pose.models as models
 import pose.datasets as datasets
+from pose.loss.loss import JointsMSELoss
+from torchsummary import summary
 
 
 # get model names and dataset names
@@ -56,19 +58,20 @@ def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
         data_time.update(time.time() - end)
 
         inputs, target = inputs.to(device), target.to(device, non_blocking=True)
+        target_weight = meta['target_weight'].to(device, non_blocking=True)
 
         # compute output
         output = model(inputs)
         if type(output) == list:  # multiple output
             loss = 0
             for o in output:
-                loss += criterion(o, target)
+                loss += criterion(o, target, target_weight)
             score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
         acc = accuracy(score_map, target, idxs=idxs)
 
-        if debug:  # visualize groundtruth and predictions
+        if debug:  # openvino_visualizer groundtruth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
             pred_batch_img = batch_with_heatmap(inputs, output)
             if not gt_win or not pred_win:
@@ -135,18 +138,20 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, d
             data_time.update(time.time() - end)
             inputs = inputs.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
+            target_weight = meta['target_weight'].to(device, non_blocking=True)
             output = model(inputs)
 
             if type(output) == list:  # multiple output
                 loss = 0
                 for o in output:
-                    loss += criterion(o, target)
+                    loss += criterion(o, target, target_weight)
                 score_map = output[-1].cpu()
             else:  # single output
                 raise ValueError('Format failed!!!')
 
             acc = accuracy(score_map, target.cpu(), idxs=idxs)
 
+            # NOTE: Conflict when using with COCO - Correction is done for integration but not confirmed
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
                 predictions[meta['index'][n], :, :] = preds[n, :, :]
@@ -193,24 +198,28 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, d
 def main(args):
     global best_acc
 
-    checkpoint_path = os.path.join(args.checkpoint, '{}_s{}_b{}_{}'.format(args.dataset, args.stacks,
-                                                                           args.blocks, args.subset))
+    checkpoint_path = os.path.join(args.checkpoint,
+                                   '{}_s{}_b{}_{}_{}'.format(args.dataset, args.stacks,
+                                                             args.blocks, 'mobile' if args.mobile else 'non-mobile',
+                                                             'all' if args.subset is None else args.subset))
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
 
     # create model
 
-    n_joints = datasets.__dict__[args.dataset].njoints if args.subset is None else len(args.subset)
+    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
                                        num_classes=n_joints,
                                        mobile=args.mobile)
+    summary(model, (3, args.inp_res, args.inp_res), device='cpu')
 
     model = torch.nn.DataParallel(model).to(device)
-    criterion = torch.nn.MSELoss(size_average=True).to(device)
+    # criterion = torch.nn.MSELoss(size_average=True).to(device)
+    criterion = JointsMSELoss(use_target_weight=True)
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=args.lr,
                                     momentum=args.momentum,
@@ -229,11 +238,11 @@ def main(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+            logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=True)
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            raise OSError("=> no checkpoint found at '{}'".format(args.resume))
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title)
         logger.set_names(['Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
 
@@ -261,7 +270,7 @@ def main(args):
         loss, acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
                                           num_classes=n_joints, out_res=args.out_res,
                                           debug=args.debug, idxs=args.subset)
-        save_pred(predictions, checkpoint=args.checkpoint)
+        save_pred(predictions, checkpoint=checkpoint_path)
         return
 
     # train and eval
@@ -296,15 +305,15 @@ def main(args):
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
-        }, predictions, is_best, checkpoint=args.checkpoint, snapshot=args.snapshot)
+        }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
     logger.close()
     logger.plot(['Train Acc', 'Val Acc'])
-    savefig(os.path.join(args.checkpoint, 'log.eps'))
+    savefig(os.path.join(checkpoint_path, 'log.eps'))
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+    parser = argparse.ArgumentParser(description='PyTorch Pose Estimation Training')
     # Dataset setting
     parser.add_argument('--dataset', metavar='DATASET', default='mpii',
                         choices=dataset_names,

@@ -19,7 +19,7 @@ class LSP(data.Dataset):
 
     def __init__(self, is_train=True, **kwargs):
         self.img_folder = kwargs['image_path']  # root image folders
-        self.jsonfile = os.path.join(kwargs['anno_path'], 'LEEDS_annotations.json')
+        self.jsonfile = kwargs['anno_path']
         self.is_train = is_train           # training set or test set
         self.inp_res = kwargs['inp_res']
         self.out_res = kwargs['out_res']
@@ -131,4 +131,4 @@ def lsp(**kwargs):
     return LSP(**kwargs)
 
 
-lsp.njoints = 16
+lsp.n_joints = 16

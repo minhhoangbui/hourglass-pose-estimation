@@ -5,8 +5,9 @@ import torch
 import torch.nn.parallel
 import torch.optim
 import os
-import experiment._init_path
+
 import pose.models as models
+import experiment._init_path
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")

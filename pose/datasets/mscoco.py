@@ -71,7 +71,7 @@ class MSCOCO(data.Dataset):
                 print('{} | {}'.format(cnt, len(self.train)))
                 a = self.anno[index]
                 img_path = os.path.join(self.img_folder, a['img_paths'])
-                img = load_image(img_path)  # CxHxW
+                img = load_BGR_image(img_path)  # CxHxW
                 mean += img.view(img.size(0), -1).mean(1)
                 std += img.view(img.size(0), -1).std(1)
             mean /= len(self.train)
@@ -110,7 +110,7 @@ class MSCOCO(data.Dataset):
 
         n_parts = pts.size(0) if self.subset is None else len(self.subset)
 
-        img = load_image(img_path)  # CxHxW
+        img = load_BGR_image(img_path)  # CxHxW
 
         r = 0
         if self.is_train:
@@ -159,4 +159,4 @@ def mscoco(**kwargs):
     return MSCOCO(**kwargs)
 
 
-mscoco.njoints = 17  # ugly but works
+mscoco.n_joints = 17  # ugly but works

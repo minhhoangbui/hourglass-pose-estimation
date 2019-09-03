@@ -9,7 +9,7 @@ import time
 import logging as log
 from openvino.inference_engine import IENetwork, IEPlugin
 import numpy as np
-from utils import render_kps, post_process_heatmap, visualize
+from utils import *
 
 
 def build_argparser():
@@ -98,23 +98,22 @@ def main():
         # in the truly Async mode we start the NEXT infer request, while waiting for the CURRENT to complete
         # in the regular mode we start the CURRENT request and immediately wait for it's completion
         inf_start = time.time()
-        if is_async_mode:
-            in_frame = cv2.resize(next_frame, (w, h))
-            # preprocess
-            in_frame = in_frame[:, :, ::-1]  # BGR -> RGB
-            in_frame = in_frame / 255.0
-            in_frame = in_frame - np.array([[[0.4404, 0.4440, 0.4327]]])  # Extract mean RGB
+        in_frame = cv2.resize(next_frame, (w, h))
+        # preprocess
+        # in_frame = in_frame[:, :, ::-1]  # BGR -> RGB
+        in_frame = in_frame / 255.0
+        if 'coco' in args.model:
+            image = (image - np.array([[[0.4003, 0.4314, 0.4534]]])) / np.array([[[0.2466, 0.2467, 0.2562]]])
+        elif 'mpii' in args.model:
+            image = (image - np.array([[[0.4327, 0.4440, 0.4404]]])) / np.array([[[0.2468, 0.2410, 0.2458]]])
+        elif 'merl' in args.model:
+            image = (image - np.array([[[0.4785, 0.5036, 0.5078]]])) / np.array([[[0.2306, 0.2289, 0.2326]]])
 
-            in_frame = in_frame.transpose((2, 0, 1))  # Change data layout from HWC to CHW
-            in_frame = in_frame.reshape((n, c, h, w))
+        in_frame = in_frame.transpose((2, 0, 1))  # Change data layout from HWC to CHW
+        in_frame = in_frame.reshape((n, c, h, w))
+        if is_async_mode:
             exec_net.start_async(request_id=next_request_id, inputs={input_blob: in_frame})
         else:
-            in_frame = cv2.resize(frame, (w, h))
-            in_frame = in_frame[:, :, ::-1]  # BGR -> RGB
-            in_frame = in_frame / 255.0
-            in_frame = in_frame - np.array([[[0.4404, 0.4440, 0.4327]]])  # Extract mean RGB
-            in_frame = in_frame.transpose((2, 0, 1))  # Change data layout from HWC to CHW
-            in_frame = in_frame.reshape((n, c, h, w))
             exec_net.start_async(request_id=cur_request_id, inputs={input_blob: in_frame})
         if exec_net.requests[cur_request_id].wait(-1) == 0:
             inf_end = time.time()
@@ -123,7 +122,7 @@ def main():
             # Parse detection results of the current request
             res = exec_net.requests[cur_request_id].outputs[out_blob]
             heatmap = res[0, :, :, :]
-            kps = post_process_heatmap(heatmap)
+            kps = extract_keypoints(heatmap)
 
             # render_kps(frame, kps, scale_w, scale_h)
             visualize(frame, kps, scale_w, scale_h)

@@ -5,12 +5,13 @@ from __future__ import print_function, absolute_import
 import sys
 import os
 from argparse import ArgumentParser
+from torchvision.transforms import transforms
 import cv2
 import numpy as np
 import logging as log
 from time import time
 from openvino.inference_engine import IENetwork, IEPlugin
-from utils import post_process_heatmap, render_kps, visualize
+from utils import *
 
 
 def build_argparser():
@@ -76,12 +77,13 @@ def main():
     if image.shape[:-1] != (h, w):
         log.warning("Image {} is resized from {} to {}".format(args.input[0], image.shape[:-1], (h, w)))
         image = cv2.resize(image, (w, h))
-        image = image[:, :, ::-1]  # BGR -> RGB
         image = image/255.0
         if 'coco' in args.model:
-            image = image - np.array([0.4566, 0.4369, 0.4061])
-        else:
-            image = image - np.array([[[0.4404, 0.4440, 0.4327]]])  # Extract mean RGB
+            image = (image - np.array([[[0.4003, 0.4314, 0.4534]]])) / np.array([[[0.2466, 0.2467, 0.2562]]])
+        elif 'mpii' in args.model:
+            image = (image - np.array([[[0.4327, 0.4440, 0.4404]]])) / np.array([[[0.2468, 0.2410, 0.2458]]])
+        elif 'merl' in args.model:
+            image = (image - np.array([[[0.4785, 0.5036, 0.5078]]])) / np.array([[[0.2306, 0.2289, 0.2326]]])
 
     image = image.transpose((2, 0, 1))  # Change data layout from HWC to CHW
     images[0] = image
@@ -112,7 +114,8 @@ def main():
     # Processing output blob
     log.info("Processing output blob")
     heatmap = res[out_blob][0, :, :, :]
-    kps = post_process_heatmap(heatmap)
+    # kps = post_process_heatmap(heatmap)
+    kps = extract_keypoints(heatmap)
     render_image = cv2.imread(args.input[0])
     # render_kps(render_image, kps, scale_x, scale_y)
     visualize(render_image, kps, scale_x, scale_y)

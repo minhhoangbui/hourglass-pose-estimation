@@ -19,7 +19,9 @@ from pose.utils.evaluation import accuracy, AverageMeter, final_preds
 from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
 from pose.utils.imutils import batch_with_heatmap
 import pose.models as models
+from pose.loss.loss import JointsMSELoss
 import pose.datasets as datasets
+from torchsummary import summary
 
 # get model names and dataset names
 model_names = sorted(name for name in models.__dict__
@@ -40,8 +42,11 @@ cudnn.benchmark = True
 
 def load_teacher_models(arch, blocks, stacks, t_checkpoint, num_classes):
     tmodel = models.__dict__[arch](num_stacks=stacks, num_blocks=blocks,
-                                   num_classes=num_classes)
+                                   num_classes=num_classes, mobile=False)
     tmodel = torch.nn.DataParallel(tmodel).cuda()
+
+    print('    Total params of teacher model: %.2fM'
+          % (sum(p.numel() for p in tmodel.parameters()) / 1000000.0))
 
     t_checkpoint = torch.load(t_checkpoint)
     tmodel.load_state_dict(t_checkpoint['state_dict'])
@@ -68,6 +73,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
         data_time.update(time.time() - end)
 
         inputs, target = inputs.to(device), target.to(device, non_blocking=True)
+        target_weight = meta['target_weight'].to(device, non_blocking=True)
 
         # compute output
         output = model(inputs)
@@ -81,13 +87,13 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
 
         for j in range(0, len(output)):
             _output = output[j]
-            kd_loss += criterion(_output, t_output)
-            gt_loss += criterion(_output, target)
+            kd_loss += criterion(_output, t_output, target_weight)
+            gt_loss += criterion(_output, target, target_weight)
         acc = accuracy(score_map, target, idxs=idxs)
         # This is confirmed from the source code of the authors. This is weighted sum of loss from each heat-map
         total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
-        if debug:  # visualize ground-truth and predictions
+        if debug:  # openvino_visualizer ground-truth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
             pred_batch_img = batch_with_heatmap(inputs, output)
             if not gt_win or not pred_win:
@@ -157,6 +163,7 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
             data_time.update(time.time() - end)
             inputs = inputs.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
+            target_weight = meta['target_weight'].to(device, non_blocking=True)
 
             t_output = t_model(inputs)[-1].detach()
 
@@ -168,8 +175,8 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
 
             for j in range(0, len(output)):
                 _output = output[j]
-                kd_loss += criterion(_output, t_output)
-                gt_loss += criterion(_output, target)
+                kd_loss += criterion(_output, t_output, target_weight)
+                gt_loss += criterion(_output, target, target_weight)
 
             total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
 
@@ -221,27 +228,30 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
 def main(args):
     global best_acc
 
-    checkpoint_path = os.path.join(args.checkpoint, '{}_s{}_b{}_{}'.format(args.dataset, args.stacks,
-                                                                           args.blocks, args.subset))
+    checkpoint_path = os.path.join(args.checkpoint,
+                                   '{}_s{}_s{}_{}_{}'.format(args.dataset, args.teacher_stacks,
+                                                             args.stacks, 'mobile' if args.mobile else 'non-mobile',
+                                                             'all' if args.subset is None else args.subset))
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
 
     # create model
-    n_joints = datasets.__dict__[args.dataset].njoints if args.subset is None else len(args.subset)
+    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
                                        num_classes=n_joints,
                                        mobile=args.mobile)
+    summary(model, (3, args.inp_res, args.inp_res), device='cpu')
 
     print("==> creating teacher model '{}', stacks={}, blocks={}".format(args.arch, args.teacher_stacks, args.blocks))
     tmodel = load_teacher_models(arch=args.arch, blocks=args.blocks, stacks=args.teacher_stacks,
                                  t_checkpoint=args.teacher_checkpoint, num_classes=n_joints)
 
     model = torch.nn.DataParallel(model).to(device)
-    criterion = torch.nn.MSELoss(size_average=True).cuda()
+    criterion = JointsMSELoss(use_target_weight=True)
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=args.lr,
                                     momentum=args.momentum,
@@ -260,11 +270,11 @@ def main(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+            logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=True)
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            raise OSError("=> no checkpoint found at '{}'".format(args.resume))
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title)
         logger.set_names(['Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
 
@@ -292,7 +302,7 @@ def main(args):
         loss, acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
                                           criterion=criterion, num_classes=n_joints,
                                           kdloss_alpha=args.kdloss_alpha, out_res=args.out_res, debug=args.debug)
-        save_pred(predictions, checkpoint=args.checkpoint)
+        save_pred(predictions, checkpoint=checkpoint_path)
         return
 
     # train and eval
@@ -328,11 +338,11 @@ def main(args):
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
-        }, predictions, is_best, checkpoint=args.checkpoint, snapshot=args.snapshot)
+        }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
     logger.close()
     logger.plot(['Train Acc', 'Val Acc'])
-    savefig(os.path.join(args.checkpoint, 'log.eps'))
+    savefig(os.path.join(checkpoint_path, 'log.eps'))
 
 
 if __name__ == '__main__':

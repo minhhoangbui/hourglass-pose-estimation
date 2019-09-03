@@ -55,15 +55,27 @@ def non_max_supression(plain, windowSize=3, threshold=1e-6):
     return plain * (plain == maximum_filter(plain, footprint=np.ones((windowSize, windowSize))))
 
 
-def render_kps(cvmat, kps, scale_x, scale_y, thr=0.1):
+def extract_keypoints(heatmap, thr=0.05):
+    kplst = []
+    for i in range(heatmap.shape[0]):
+        _map = heatmap[i, :, :]
+        ind = np.unravel_index(np.argmax(_map), _map.shape)
+        if _map[ind] > thr:
+            kplst.append((int(ind[1]), int(ind[0]), _map[ind]))
+        else:
+            kplst.append((0, 0, 0))
+    kplst = np.array(kplst)
+    return kplst
+
+
+def render_kps(cvmat, kps, scale_x, scale_y):
     for _kp in kps:
         _x, _y, _conf = _kp
-        if _conf > thr:
-            cv2.circle(cvmat, center=(int(_x*4*scale_x), int(_y*4*scale_y)), color=(0, 0, 255), radius=5)
+        cv2.circle(cvmat, center=(int(_x*4*scale_x), int(_y*4*scale_y)), color=(0, 0, 255), radius=5)
     return cvmat
 
 
-def visualize(image, kps, scale_x, scale_y, thr=0.1):
+def visualize(image, kps, scale_x, scale_y, thr=0.01):
     num_kpts = 17
     assert kps.shape[0] == num_kpts
     for part_id in range(len(BODY_PARTS_KPT_IDS)):

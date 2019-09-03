@@ -13,7 +13,7 @@ from pose.utils.transform import *
 class MPII(data.Dataset):
     def __init__(self, is_train=True, **kwargs):
         self.img_folder = kwargs['image_path']  # root image folders
-        self.json_file = os.path.join(kwargs['anno_path'], 'mpii_annotations.json')
+        self.json_file = kwargs['anno_path']
         self.is_train = is_train  # training set or test set
         self.inp_res = kwargs['inp_res']
         self.out_res = kwargs['out_res']
@@ -44,7 +44,7 @@ class MPII(data.Dataset):
             for index in self.train_list:
                 a = self.anno[index]
                 img_path = os.path.join(self.img_folder, a['img_paths'])
-                img = load_image(img_path)  # CxHxW
+                img = load_BGR_image(img_path)  # CxHxW
                 mean += img.view(img.size(0), -1).mean(1)
                 std += img.view(img.size(0), -1).std(1)
             mean /= len(self.train_list)
@@ -83,7 +83,7 @@ class MPII(data.Dataset):
 
         n_parts = pts.size(0) if self.subset is None else len(self.subset)
 
-        img = load_image(img_path)  # CxHxW
+        img = load_BGR_image(img_path)  # CxHxW
 
         r = 0
         if self.is_train:
@@ -133,4 +133,4 @@ def mpii(**kwargs):
     return MPII(**kwargs)
 
 
-mpii.njoints = 16
+mpii.n_joints = 16

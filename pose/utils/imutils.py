@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import numpy as np
 import scipy.misc
+import cv2
 from .misc import *
 
 
@@ -22,6 +23,9 @@ def im_to_torch(img):
 def load_image(img_path):
     # H x W x C => C x H x W
     return im_to_torch(scipy.misc.imread(img_path, mode='RGB'))
+
+def load_BGR_image(img_path):
+    return im_to_torch(cv2.imread(img_path))
 
 
 def resize(img, owidth, oheight):

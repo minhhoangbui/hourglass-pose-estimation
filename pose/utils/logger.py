@@ -81,7 +81,7 @@ class Logger(object):
 
 
 class LoggerMonitor(object):
-    """Load and visualize multiple logs."""
+    """Load and openvino_visualizer multiple logs."""
     def __init__ (self, paths):
         """paths is a distionary with {name:filepath} pair"""
         self.loggers = []

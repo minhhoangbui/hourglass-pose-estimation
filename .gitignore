@@ -109,3 +109,6 @@ ENV/
 .DS_Store
 data/.DS_Store
 
+# bash file
+*.sh
+

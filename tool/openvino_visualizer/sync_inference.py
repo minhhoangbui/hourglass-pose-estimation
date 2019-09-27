@@ -81,7 +81,7 @@ def main():
         if 'coco' in args.model:
             image = (image - np.array([[[0.4003, 0.4314, 0.4534]]])) / np.array([[[0.2466, 0.2467, 0.2562]]])
         elif 'mpii' in args.model:
-            image = (image - np.array([[[0.4327, 0.4440, 0.4404]]])) / np.array([[[0.2468, 0.2410, 0.2458]]])
+            image = (image - np.array([[[0.4068, 0.4443, 0.4660]]])) / np.array([[[0.2289, 0.2326, 0.2365]]])
         elif 'merl' in args.model:
             image = (image - np.array([[[0.4785, 0.5036, 0.5078]]])) / np.array([[[0.2306, 0.2289, 0.2326]]])
 

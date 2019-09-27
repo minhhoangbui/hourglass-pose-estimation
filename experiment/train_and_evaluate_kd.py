@@ -22,6 +22,7 @@ import pose.models as models
 from pose.loss.loss import JointsMSELoss
 import pose.datasets as datasets
 from torchsummary import summary
+import datetime
 
 # get model names and dataset names
 model_names = sorted(name for name in models.__dict__
@@ -63,7 +64,6 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
     acces = AverageMeter()
 
     model.train()
-
     end = time.time()
 
     gt_win, pred_win, pred_teacher = None, None, None
@@ -229,9 +229,10 @@ def main(args):
     global best_acc
 
     checkpoint_path = os.path.join(args.checkpoint,
-                                   '{}_s{}_s{}_{}_{}'.format(args.dataset, args.teacher_stacks,
-                                                             args.stacks, 'mobile' if args.mobile else 'non-mobile',
-                                                             'all' if args.subset is None else args.subset))
+                                   '{}_s{}_s{}_{}_{}_{}'.format(args.dataset, args.teacher_stacks,
+                                                                args.stacks, 'mobile' if args.mobile else 'non-mobile',
+                                                                'all' if args.subset is None else args.subset,
+                                                                args.kdloss_alpha))
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
@@ -274,8 +275,11 @@ def main(args):
         else:
             raise OSError("=> no checkpoint found at '{}'".format(args.resume))
     else:
-        logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title)
-        logger.set_names(['Epoch', 'LR', 'Train Loss', 'Val Loss',
+        if os.path.isfile(os.path.join(checkpoint_path, 'log.txt')):
+            logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=True)
+        else:
+            logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=False)
+        logger.set_names(['Time', 'Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
 
     # create data loader
@@ -322,9 +326,9 @@ def main(args):
                                                       criterion=criterion, num_classes=n_joints,
                                                       kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
                                                       debug=args.debug)
-
         # append logger file
-        logger.append([epoch + 1, lr, train_loss, valid_loss, train_acc, valid_acc])
+        logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
+                       train_acc, valid_acc])
 
         # remember best acc and save checkpoint
         is_best = valid_acc > best_acc

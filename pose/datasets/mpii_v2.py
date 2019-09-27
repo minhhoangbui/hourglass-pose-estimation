@@ -91,11 +91,11 @@ class MPII(JointsDataset):
             image_name = a['image']
 
             c = np.array(a['center'], dtype=np.float)
-            s = a['scale']
+            s = np.array([a['scale'], a['scale']], dtype=np.float)
 
             # Adjust center/scale slightly to avoid cropping limbs
             if c[0] != -1:
-                c[1] = c[1] + 15 * s
+                c[1] = c[1] + 15 * s[1]
                 s = s * 1.25
 
             # MPII uses matlab format, index is based 1,

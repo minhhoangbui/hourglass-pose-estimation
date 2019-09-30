@@ -70,7 +70,7 @@ def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
             score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(score_map, target, idxs=idxs)
+        acc = accuracy(score_map, target, idxs=idxs, thr=0.2)
 
         if debug:  # openvino_visualizer groundtruth and predictions
             gt_batch_img = batch_with_heatmap(inputs, target)
@@ -150,7 +150,7 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, d
             else:  # single output
                 raise ValueError('Format failed!!!')
 
-            acc = accuracy(score_map, target.cpu(), idxs=idxs)
+            acc = accuracy(score_map, target.cpu(), idxs=idxs, thr=0.2)
 
             # NOTE: Conflict when using with COCO - Correction is done for integration but not confirmed
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])

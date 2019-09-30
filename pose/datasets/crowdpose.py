@@ -63,11 +63,12 @@ class CrowdPose(JointsDataset):
         if self.is_train:
             print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
             print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
+        return meanstd['mean'], meanstd['std']
 
     def _load_data(self):
         gt_db = []
         for aid in self.coco.anns.keys():
-            ann = self.coco[aid]
+            ann = self.coco.anns[aid]
 
             x, y, w, h = ann['bbox']
             img = self.coco.loadImgs(ann['image_id'])[0]
@@ -80,6 +81,7 @@ class CrowdPose(JointsDataset):
                 bbox = [x1, y1, x2 - x1, y2 - y1]
             else:
                 continue
+            x, y, w, h = bbox
             center = np.array([x + w * 0.5, y + h * 0.5])
             if w > self.aspect_ratio * h:
                 h = w / self.aspect_ratio
@@ -100,7 +102,7 @@ class CrowdPose(JointsDataset):
                 joints_3d_vis[ipt, 1] = t_vis
                 joints_3d_vis[ipt, 2] = 0
             gt_db.append({
-                'image': self.coco.imgs[ann['image_id']]['file_name'],
+                'image': os.path.join(self.images, self.coco.imgs[ann['image_id']]['file_name']),
                 'center': center,
                 'scale': scale,
                 'joints_3d': joints_3d,

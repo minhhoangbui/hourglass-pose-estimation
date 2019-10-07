@@ -12,13 +12,13 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import datetime
+from torch.utils.tensorboard import SummaryWriter
 
 import _init_path
 from pose import Bar
 from pose.utils.logger import Logger, savefig
 from pose.utils.evaluation import accuracy, AverageMeter, final_preds
 from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
-from pose.utils.imutils import batch_with_heatmap
 import pose.models as models
 import pose.datasets as datasets
 from pose.loss.loss import JointsMSELoss
@@ -42,7 +42,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
 
 
-def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
+def train(train_loader, model, criterion, optimizer, idxs=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -70,23 +70,8 @@ def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
             score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(score_map, target, idxs=idxs, thr=0.2)
+        acc = accuracy(score_map, target, idxs=idxs, thr=0.5)
 
-        if debug:  # openvino_visualizer groundtruth and predictions
-            gt_batch_img = batch_with_heatmap(inputs, target)
-            pred_batch_img = batch_with_heatmap(inputs, output)
-            if not gt_win or not pred_win:
-                ax1 = plt.subplot(121)
-                ax1.title.set_text('Groundtruth')
-                gt_win = plt.imshow(gt_batch_img)
-                ax2 = plt.subplot(122)
-                ax2.title.set_text('Prediction')
-                pred_win = plt.imshow(pred_batch_img)
-            else:
-                gt_win.set_data(gt_batch_img)
-                pred_win.set_data(pred_batch_img)
-            plt.pause(.05)
-            plt.draw()
 
         # measure accuracy and record loss
         losses.update(loss.item(), inputs.size(0))
@@ -118,7 +103,7 @@ def train(train_loader, model, criterion, optimizer, idxs=None, debug=False):
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, debug=False):
+def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -150,26 +135,13 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64, d
             else:  # single output
                 raise ValueError('Format failed!!!')
 
-            acc = accuracy(score_map, target.cpu(), idxs=idxs, thr=0.2)
+            acc = accuracy(score_map, target.cpu(), idxs=idxs, thr=0.5)
 
             # NOTE: Conflict when using with COCO - Correction is done for integration but not confirmed
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
                 predictions[meta['index'][n], :, :] = preds[n, :, :]
 
-            if debug:
-                gt_batch_img = batch_with_heatmap(inputs, target)
-                pred_batch_img = batch_with_heatmap(inputs, score_map)
-                if not gt_win or not pred_win:
-                    plt.subplot(121)
-                    gt_win = plt.imshow(gt_batch_img)
-                    plt.subplot(122)
-                    pred_win = plt.imshow(pred_batch_img)
-                else:
-                    gt_win.set_data(gt_batch_img)
-                    pred_win.set_data(pred_batch_img)
-                plt.pause(.05)
-                plt.draw()
 
             # measure accuracy and record loss
             losses.update(loss.item(), inputs.size(0))
@@ -217,6 +189,7 @@ def main(args):
                                        num_classes=n_joints,
                                        mobile=args.mobile)
     summary(model, (3, args.inp_res, args.inp_res), device='cpu')
+    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
     model = torch.nn.DataParallel(model).to(device)
     # criterion = torch.nn.MSELoss(size_average=True).to(device)
@@ -249,9 +222,6 @@ def main(args):
             logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=False)
         logger.set_names(['Time', 'Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
-
-    print('    Total params: %.2fM'
-          % (sum(p.numel() for p in model.parameters()) / 1000000.0))
 
     # create data loader
     train_dataset = datasets.__dict__[args.dataset](is_train=True, **vars(args))
@@ -290,12 +260,16 @@ def main(args):
 
         # train for one epoch
         train_loss, train_acc = train(train_loader=train_loader, model=model, criterion=criterion,
-                                      optimizer=optimizer, idxs=args.subset, debug=args.debug)
+                                      optimizer=optimizer, idxs=args.subset)
 
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
-                                                      num_classes=n_joints, out_res=args.out_res, debug=args.debug,
+                                                      num_classes=n_joints, out_res=args.out_res,
                                                       idxs=args.subset)
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Loss/test', valid_loss, epoch)
+        writer.add_scalar('Acc/train', train_acc, epoch)
+        writer.add_scalar('Acc/test', valid_acc, epoch)
 
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
@@ -312,9 +286,8 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
+    writer.close()
     logger.close()
-    logger.plot(['Train Acc', 'Val Acc'])
-    savefig(os.path.join(checkpoint_path, 'log.eps'))
 
 
 if __name__ == '__main__':
@@ -398,8 +371,6 @@ if __name__ == '__main__':
                         help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('-d', '--debug', dest='debug', action='store_true',
-                        help='show intermediate results')
 
     main(parser.parse_args())
 

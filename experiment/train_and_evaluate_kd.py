@@ -23,6 +23,7 @@ from pose.loss.loss import JointsMSELoss
 import pose.datasets as datasets
 from torchsummary import summary
 import datetime
+from torch.utils.tensorboard import SummaryWriter
 
 # get model names and dataset names
 model_names = sorted(name for name in models.__dict__
@@ -236,7 +237,7 @@ def main(args):
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
-
+    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
     # create model
     n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
 
@@ -326,6 +327,10 @@ def main(args):
                                                       criterion=criterion, num_classes=n_joints,
                                                       kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
                                                       debug=args.debug)
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Loss/test', valid_loss, epoch)
+        writer.add_scalar('Acc/train', train_acc, epoch)
+        writer.add_scalar('Acc/test', valid_acc, epoch)
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
                        train_acc, valid_acc])
@@ -341,9 +346,8 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
+    writer.close()
     logger.close()
-    logger.plot(['Train Acc', 'Val Acc'])
-    savefig(os.path.join(checkpoint_path, 'log.eps'))
 
 
 if __name__ == '__main__':

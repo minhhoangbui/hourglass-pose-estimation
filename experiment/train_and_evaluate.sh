@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-DATASET=crowdpose
+DATASET=wrists
 NUM_STACKS=2
 NUM_BLOCKS=1
-DATASET_FOLDER=/mnt/hdd10tb/Datasets/CrowdPose/images
-ANNOTATION=/mnt/hdd10tb/Datasets/CrowdPose/json
+DATASET_FOLDER=/home/hoang/datasets/JR-Wrist/test/AVC9003_20190902_204123/images/
+ANNOTATION=/home/hoang/datasets/JR-Wrist/test/AVC9003_20190902_204123/
 CHECKPOINT_PATH=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/
-TRAIN_BATCH=48
-TEST_BATCH=48
-GPUS=2,3
-EVALUATION=false
-SCHEDULE='40 70'
+TRAIN_BATCH=24
+TEST_BATCH=24
+GPUS=2,
+EVALUATION=true
+SCHEDULE='150 230'
+SUBSET='10 15'
 MOBILE=true
-EPOCHS=90
-RESUME=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/crowdpose_s2_b1_mobile_all/checkpoint.pth.tar
+EPOCHS=260
+RESUME=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/wrists_s2_b1_mobile_all/checkpoint.pth.tar
 
 KD_ALPHA=1.0
 TEACHER_CHECKPOINT=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/mscoco_v2_s8_b1_non-mobile_all/model_best.pth.tar

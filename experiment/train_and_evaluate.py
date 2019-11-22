@@ -12,7 +12,8 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import datetime
-from torch.utils.tensorboard import SummaryWriter
+import re
+# from torch.utils.tensorboard import SummaryWriter
 
 import _init_path
 from pose import Bar
@@ -52,10 +53,11 @@ def train(train_loader, model, criterion, optimizer, idxs=None):
 
     end = time.time()
 
-    gt_win, pred_win = None, None
     bar = Bar('Training', max=len(train_loader))
 
     for i, (inputs, target, meta) in enumerate(train_loader):
+        if idxs is not None:
+            target = torch.index_select(target, 1, idxs)
         data_time.update(time.time() - end)
 
         inputs, target = inputs.to(device), target.to(device, non_blocking=True)
@@ -71,7 +73,6 @@ def train(train_loader, model, criterion, optimizer, idxs=None):
         else:
             raise ValueError('Format failed!!!')
         acc = accuracy(score_map, target, idxs=idxs, thr=0.5)
-
 
         # measure accuracy and record loss
         losses.update(loss.item(), inputs.size(0))
@@ -115,11 +116,13 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
     # switch to evaluate mode
     model.eval()
 
-    gt_win, pred_win = None, None
     end = time.time()
     bar = Bar('Evaluating ', max=len(val_loader))
     with torch.no_grad():
         for i, (inputs, target, meta) in enumerate(val_loader):
+            if idxs is not None:
+                target = torch.index_select(target, 1, idxs)
+
             # measure data loading time
             data_time.update(time.time() - end)
             inputs = inputs.to(device, non_blocking=True)
@@ -141,7 +144,6 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
                 predictions[meta['index'][n], :, :] = preds[n, :, :]
-
 
             # measure accuracy and record loss
             losses.update(loss.item(), inputs.size(0))
@@ -170,11 +172,13 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
 
 def main(args):
     global best_acc
-
+    idxs_str = str(args.subset)
+    idxs_str = idxs_str.strip('[]')
+    idxs_str = re.sub(r'\s+', '', idxs_str)
     checkpoint_path = os.path.join(args.checkpoint,
                                    '{}_s{}_b{}_{}_{}'.format(args.dataset, args.stacks,
                                                              args.blocks, 'mobile' if args.mobile else 'non-mobile',
-                                                             'all' if args.subset is None else args.subset))
+                                                             'all' if args.subset is None else idxs_str))
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
@@ -189,7 +193,7 @@ def main(args):
                                        num_classes=n_joints,
                                        mobile=args.mobile)
     summary(model, (3, args.inp_res, args.inp_res), device='cpu')
-    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
+    # writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
     model = torch.nn.DataParallel(model).to(device)
     # criterion = torch.nn.MSELoss(size_average=True).to(device)
@@ -237,13 +241,15 @@ def main(args):
         batch_size=args.test_batch, shuffle=False,
         num_workers=args.workers, pin_memory=True
     )
+    idxs = args.subset
+    if args.subset is not None:
+        idxs = torch.LongTensor(args.subset)
 
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
         loss, acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
-                                          num_classes=n_joints, out_res=args.out_res,
-                                          debug=args.debug, idxs=args.subset)
+                                          num_classes=n_joints, out_res=args.out_res, idxs=idxs)
         save_pred(predictions, checkpoint=checkpoint_path)
         return
 
@@ -260,16 +266,15 @@ def main(args):
 
         # train for one epoch
         train_loss, train_acc = train(train_loader=train_loader, model=model, criterion=criterion,
-                                      optimizer=optimizer, idxs=args.subset)
+                                      optimizer=optimizer, idxs=idxs)
 
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
-                                                      num_classes=n_joints, out_res=args.out_res,
-                                                      idxs=args.subset)
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Loss/test', valid_loss, epoch)
-        writer.add_scalar('Acc/train', train_acc, epoch)
-        writer.add_scalar('Acc/test', valid_acc, epoch)
+                                                      num_classes=n_joints, out_res=args.out_res, idxs=idxs)
+        # writer.add_scalar('Loss/train', train_loss, epoch)
+        # writer.add_scalar('Loss/test', valid_loss, epoch)
+        # writer.add_scalar('Acc/train', train_acc, epoch)
+        # writer.add_scalar('Acc/test', valid_acc, epoch)
 
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
@@ -286,7 +291,7 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
-    writer.close()
+    # writer.close()
     logger.close()
 
 

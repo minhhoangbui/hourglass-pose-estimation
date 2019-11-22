@@ -4,7 +4,6 @@
 # Written by Hoang Bui (hoang.bui@awl.com.vn)
 # ------------------------------------------------------------------------------
 
-# TODO: RGB conflict, openCV BGR, scipy in load_image RGB
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -21,7 +20,7 @@ from torchvision.transforms import transforms
 logger = logging.getLogger(__name__)
 
 
-class MERL3K(JointsDataset):
+class Wrist(JointsDataset):
     def __init__(self, is_train, **kwargs):
         super().__init__(is_train, **kwargs)
         self.image_width = kwargs['inp_res']
@@ -29,11 +28,10 @@ class MERL3K(JointsDataset):
         self.aspect_ratio = 1.0
         self.pixel_std = 200
 
-
         if self.is_train:
-            self.annos = COCO(os.path.join(self.json, 'train_merl.json'))
+            self.annos = COCO(os.path.join(self.json, 'annotations.json'))
         else:
-            self.annos = COCO(os.path.join(self.json, 'test_merl.json'))
+            self.annos = COCO(os.path.join(self.json, 'annotations.json'))
 
         cats = [cat['name']
                 for cat in self.annos.loadCats(self.annos.getCatIds())]
@@ -45,14 +43,13 @@ class MERL3K(JointsDataset):
         self._coco_ind_to_class_ind = dict([(self._class_to_coco_ind[cls],
                                              self._class_to_ind[cls])
                                             for cls in self.classes[1:]])
-        # load image file names
+
         self.image_set_index = self._load_image_set_index()
         self.num_images = len(self.image_set_index)
         logger.info('=> num_images: {}'.format(self.num_images))
 
-        self.num_joints = 17
-        self.flip_pairs = [[1, 2], [3, 4], [5, 6], [7, 8],
-                           [9, 10], [11, 12], [13, 14], [15, 16]]
+        self.num_joints = 2
+        self.flip_pairs = [[0, 1]]
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
@@ -65,7 +62,7 @@ class MERL3K(JointsDataset):
         logger.info('=> load {} samples'.format(len(self.db)))
 
     def _compute_mean(self):
-        meanstd_file = './data/merl3000/mean.pth.tar'
+        meanstd_file = './data/wrists/mean.pth.tar'
         if os.path.isfile(meanstd_file):
             meanstd = torch.load(meanstd_file)
         else:
@@ -138,12 +135,12 @@ class MERL3K(JointsDataset):
                 obj['clean_bbox'] = [x1, y1, x2-x1, y2-y1]
                 valid_objs.append(obj)
         objs = valid_objs
-
         rec = []
         for obj in objs:
-            cls = self._coco_ind_to_class_ind[obj['category_id']]
-            if cls != 1 or len(obj['keypoints']) != self.num_joints * 3:
-                continue
+
+            # cls = self._coco_ind_to_class_ind[obj['category_id']]
+            # if cls != 1 or len(obj['keypoints']) != self.num_joints * 3:
+            #     continue
 
             # ignore objs without keypoints annotation
             if max(obj['keypoints']) == 0:
@@ -152,10 +149,10 @@ class MERL3K(JointsDataset):
             joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
             joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
             for ipt in range(self.num_joints):
-                joints_3d[ipt, 0] = obj['keypoints'][ipt * 3 + 0]
-                joints_3d[ipt, 1] = obj['keypoints'][ipt * 3 + 1]
+                joints_3d[ipt, 0] = obj['keypoints'][(ipt + 9) * 3 + 0]
+                joints_3d[ipt, 1] = obj['keypoints'][(ipt + 9) * 3 + 1]
                 joints_3d[ipt, 2] = 0
-                t_vis = obj['keypoints'][ipt * 3 + 2]
+                t_vis = obj['keypoints'][(ipt + 9) * 3 + 2]
                 if t_vis > 1:
                     t_vis = 1
                 joints_3d_vis[ipt, 0] = t_vis
@@ -205,8 +202,8 @@ class MERL3K(JointsDataset):
         return image_path
 
 
-def merl3k(**kwargs):
-    return MERL3K(**kwargs)
+def wrists(**kwargs):
+    return Wrist(**kwargs)
 
 
-merl3k.n_joints = 17
+wrists.n_joints = 2

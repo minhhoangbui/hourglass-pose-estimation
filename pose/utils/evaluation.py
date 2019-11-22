@@ -56,7 +56,6 @@ def accuracy(output, target, idxs=None, thr=0.5):
     Calculate accuracy according to PCK, but uses ground truth heatmap rather than x,y locations
     First value to be returned is average accuracy across 'idxs', followed by individual accuracies
     """
-
     if idxs is None:
         idxs = list(range(output.shape[1]))
     preds = get_preds(output)
@@ -69,7 +68,7 @@ def accuracy(output, target, idxs=None, thr=0.5):
     cnt = 0
 
     for i in range(len(idxs)):
-        acc[i + 1] = dist_acc(dists[idxs[i]], thr=thr)
+        acc[i + 1] = dist_acc(dists[i], thr=thr)
         if acc[i + 1] >= 0:
             avg_acc = avg_acc + acc[i + 1]
             cnt += 1

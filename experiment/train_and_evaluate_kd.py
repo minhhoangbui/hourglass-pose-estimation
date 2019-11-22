@@ -56,7 +56,7 @@ def load_teacher_models(arch, blocks, stacks, t_checkpoint, num_classes):
     return tmodel
 
 
-def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs=None, debug=False):
+def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -67,10 +67,11 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
     model.train()
     end = time.time()
 
-    gt_win, pred_win, pred_teacher = None, None, None
     bar = Bar('Training', max=len(train_loader))
 
     for i, (inputs, target, meta) in enumerate(train_loader):
+        if idxs is not None:
+            target = torch.index_select(target, 1, idxs)
         data_time.update(time.time() - end)
 
         inputs, target = inputs.to(device), target.to(device, non_blocking=True)
@@ -93,22 +94,6 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
         acc = accuracy(score_map, target, idxs=idxs)
         # This is confirmed from the source code of the authors. This is weighted sum of loss from each heat-map
         total_loss = kdloss_alpha * kd_loss + (1.0 - kdloss_alpha) * gt_loss
-
-        if debug:  # openvino_visualizer ground-truth and predictions
-            gt_batch_img = batch_with_heatmap(inputs, target)
-            pred_batch_img = batch_with_heatmap(inputs, output)
-            if not gt_win or not pred_win:
-                ax1 = plt.subplot(121)
-                ax1.title.set_text('Groundtruth')
-                gt_win = plt.imshow(gt_batch_img)
-                ax2 = plt.subplot(122)
-                ax2.title.set_text('Prediction')
-                pred_win = plt.imshow(pred_batch_img)
-            else:
-                gt_win.set_data(gt_batch_img)
-                pred_win.set_data(pred_batch_img)
-            plt.pause(.05)
-            plt.draw()
 
         # measure accuracy and record loss
         kd_losses.update(kd_loss.item(), inputs.size(0))
@@ -142,7 +127,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, idxs=None, out_res=64, debug=False):
+def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, idxs=None, out_res=64):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -160,6 +145,9 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
     bar = Bar('Evaluating', max=len(val_loader))
     with torch.no_grad():
         for i, (inputs, target, meta) in enumerate(val_loader):
+            if idxs is not None:
+                target = torch.index_select(target, 1, idxs)
+
             # measure data loading time
             data_time.update(time.time() - end)
             inputs = inputs.to(device, non_blocking=True)
@@ -186,20 +174,6 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
             preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
             for n in range(score_map.size(0)):
                 predictions[meta['index'][n], :, :] = preds[n, :, :]
-
-            if debug:
-                gt_batch_img = batch_with_heatmap(inputs, target)
-                pred_batch_img = batch_with_heatmap(inputs, score_map)
-                if not gt_win or not pred_win:
-                    plt.subplot(121)
-                    gt_win = plt.imshow(gt_batch_img)
-                    plt.subplot(122)
-                    pred_win = plt.imshow(pred_batch_img)
-                else:
-                    gt_win.set_data(gt_batch_img)
-                    pred_win.set_data(pred_batch_img)
-                plt.pause(.05)
-                plt.draw()
 
             # measure accuracy and record loss
             losses.update(total_loss.item(), inputs.size(0))
@@ -237,7 +211,8 @@ def main(args):
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
-    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
+    # writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
+
     # create model
     n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
 
@@ -327,10 +302,11 @@ def main(args):
                                                       criterion=criterion, num_classes=n_joints,
                                                       kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
                                                       debug=args.debug)
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Loss/test', valid_loss, epoch)
-        writer.add_scalar('Acc/train', train_acc, epoch)
-        writer.add_scalar('Acc/test', valid_acc, epoch)
+        # writer.add_scalar('Loss/train', train_loss, epoch)
+        # writer.add_scalar('Loss/test', valid_loss, epoch)
+        # writer.add_scalar('Acc/train', train_acc, epoch)
+        # writer.add_scalar('Acc/test', valid_acc, epoch)
+
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
                        train_acc, valid_acc])
@@ -346,7 +322,7 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
-    writer.close()
+    # writer.close()
     logger.close()
 
 
@@ -433,8 +409,6 @@ if __name__ == '__main__':
                         help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('-d', '--debug', dest='debug', action='store_true',
-                        help='show intermediate results')
     parser.add_argument('--teacher-checkpoint', metavar='PATH',
                         help='path to teacher checkpoint')
 

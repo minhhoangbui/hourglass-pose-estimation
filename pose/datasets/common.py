@@ -42,6 +42,7 @@ class JointsDataset(Dataset):
         self.heatmap_size = np.array([kwargs['out_res'], kwargs['out_res']])
         self.sigma = kwargs['sigma']
         self.db = []
+        self.transform = None
 
     def _get_db(self):
         raise NotImplementedError
@@ -57,7 +58,6 @@ class JointsDataset(Dataset):
 
         image_file = db_rec['image']
         imgnum = db_rec['imgnum'] if 'imgnum' in db_rec else ''
-
 
         data_numpy = cv2.imread(
             image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -84,20 +84,20 @@ class JointsDataset(Dataset):
                 if prob <= 0.6 else 0
 
             if prob <= 0.5:
-                data_numpy = data_numpy[:, ::-1, :] # flip through vertical axes
+                data_numpy = data_numpy[:, ::-1, :]  # flip through vertical axes
                 joints, joints_vis = fliplr_joints(
                     joints, joints_vis, data_numpy.shape[1], self.flip_pairs)
                 c[0] = data_numpy.shape[1] - c[0] - 1
 
         trans = get_affine_transform(c, s, r, self.image_size)
-        input = cv2.warpAffine(
-            data_numpy,
-            trans,
-            (int(self.image_size[0]), int(self.image_size[1])),
-            flags=cv2.INTER_LINEAR)
+        cropped_input = cv2.warpAffine(
+                        data_numpy,
+                        trans,
+                        (int(self.image_size[1]), int(self.image_size[0])),
+                        flags=cv2.INTER_LINEAR)
 
         if self.transform:
-            input = self.transform(input)
+            cropped_input = self.transform(cropped_input)
 
         for i in range(self.num_joints):
             if joints_vis[i, 0] > 0.0:
@@ -121,7 +121,7 @@ class JointsDataset(Dataset):
             'target_weight': target_weight
         }
 
-        return input, target, meta
+        return cropped_input, target, meta
 
     def select_data(self, db):
         db_selected = []

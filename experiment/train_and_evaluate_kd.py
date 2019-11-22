@@ -3,9 +3,6 @@ from __future__ import print_function
 import os
 import argparse
 import time
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.parallel
@@ -14,10 +11,9 @@ import torch.optim
 
 import _init_path
 from pose import Bar
-from pose.utils.logger import Logger, savefig
+from pose.utils.logger import Logger
 from pose.utils.evaluation import accuracy, AverageMeter, final_preds
 from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
-from pose.utils.imutils import batch_with_heatmap
 import pose.models as models
 from pose.loss.loss import JointsMSELoss
 import pose.datasets as datasets
@@ -74,7 +70,7 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
             target = torch.index_select(target, 1, idxs)
         data_time.update(time.time() - end)
 
-        inputs, target = inputs.to(device), target.to(device, non_blocking=True)
+        inputs, target = inputs.to(device, non_blocking=True), target.to(device, non_blocking=True)
         target_weight = meta['target_weight'].to(device, non_blocking=True)
 
         # compute output
@@ -211,7 +207,7 @@ def main(args):
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
-    # writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
+    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
     # create model
     n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
@@ -302,10 +298,10 @@ def main(args):
                                                       criterion=criterion, num_classes=n_joints,
                                                       kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
                                                       debug=args.debug)
-        # writer.add_scalar('Loss/train', train_loss, epoch)
-        # writer.add_scalar('Loss/test', valid_loss, epoch)
-        # writer.add_scalar('Acc/train', train_acc, epoch)
-        # writer.add_scalar('Acc/test', valid_acc, epoch)
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Loss/test', valid_loss, epoch)
+        writer.add_scalar('Acc/train', train_acc, epoch)
+        writer.add_scalar('Acc/test', valid_acc, epoch)
 
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
@@ -322,7 +318,7 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
-    # writer.close()
+    writer.close()
     logger.close()
 
 

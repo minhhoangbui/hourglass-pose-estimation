@@ -1,3 +1,6 @@
+# NOTE: If this module doesn't work, we can roll down the version of PyTorch to 1.0.1 or upgrade
+# upgrade the version of openvino
+
 from __future__ import print_function
 
 import argparse

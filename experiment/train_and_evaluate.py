@@ -3,9 +3,6 @@ from __future__ import print_function
 import os
 import argparse
 import time
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.parallel
@@ -13,11 +10,11 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import datetime
 import re
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 import _init_path
 from pose import Bar
-from pose.utils.logger import Logger, savefig
+from pose.utils.logger import Logger
 from pose.utils.evaluation import accuracy, AverageMeter, final_preds
 from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
 import pose.models as models
@@ -193,10 +190,10 @@ def main(args):
                                        num_classes=n_joints,
                                        mobile=args.mobile)
     summary(model, (3, args.inp_res, args.inp_res), device='cpu')
-    # writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
+    writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
     model = torch.nn.DataParallel(model).to(device)
-    # criterion = torch.nn.MSELoss(size_average=True).to(device)
+
     criterion = JointsMSELoss(use_target_weight=True)
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=args.lr,
@@ -271,10 +268,10 @@ def main(args):
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
                                                       num_classes=n_joints, out_res=args.out_res, idxs=idxs)
-        # writer.add_scalar('Loss/train', train_loss, epoch)
-        # writer.add_scalar('Loss/test', valid_loss, epoch)
-        # writer.add_scalar('Acc/train', train_acc, epoch)
-        # writer.add_scalar('Acc/test', valid_acc, epoch)
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Loss/test', valid_loss, epoch)
+        writer.add_scalar('Acc/train', train_acc, epoch)
+        writer.add_scalar('Acc/test', valid_acc, epoch)
 
         # append logger file
         logger.append([datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), epoch + 1, lr, train_loss, valid_loss,
@@ -291,7 +288,7 @@ def main(args):
             'optimizer': optimizer.state_dict(),
         }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
-    # writer.close()
+    writer.close()
     logger.close()
 
 

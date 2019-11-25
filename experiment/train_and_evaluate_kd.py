@@ -136,7 +136,6 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
     # switch to evaluate mode
     model.eval()
 
-    gt_win, pred_win = None, None
     end = time.time()
     bar = Bar('Evaluating', max=len(val_loader))
     with torch.no_grad():
@@ -274,7 +273,7 @@ def main(args):
         print('\nEvaluation only')
         loss, acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
                                           criterion=criterion, num_classes=n_joints,
-                                          kdloss_alpha=args.kdloss_alpha, out_res=args.out_res, debug=args.debug)
+                                          kdloss_alpha=args.kdloss_alpha, out_res=args.out_res)
         save_pred(predictions, checkpoint=checkpoint_path)
         return
 
@@ -291,13 +290,13 @@ def main(args):
 
         # train for one epoch
         train_loss, train_acc = train(train_loader=train_loader, model=model, t_model=tmodel, criterion=criterion,
-                                      kdloss_alpha=args.kdloss_alpha, optimizer=optimizer, debug=args.debug)
+                                      kdloss_alpha=args.kdloss_alpha, optimizer=optimizer)
 
         # evaluate on validation set
         valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
                                                       criterion=criterion, num_classes=n_joints,
-                                                      kdloss_alpha=args.kdloss_alpha, out_res=args.out_res,
-                                                      debug=args.debug)
+                                                      kdloss_alpha=args.kdloss_alpha, out_res=args.out_res)
+
         writer.add_scalar('Loss/train', train_loss, epoch)
         writer.add_scalar('Loss/test', valid_loss, epoch)
         writer.add_scalar('Acc/train', train_acc, epoch)

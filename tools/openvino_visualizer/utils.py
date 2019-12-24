@@ -71,7 +71,7 @@ def extract_keypoints(heatmap, thr=0.05):
 def render_kps(cvmat, kps, scale_x, scale_y):
     for _kp in kps:
         _x, _y, _conf = _kp
-        cv2.circle(cvmat, center=(int(_x*4*scale_x), int(_y*4*scale_y)), color=(0, 0, 255), radius=5)
+        cv2.circle(cvmat, center=(int(_x*4*scale_x), int(_y*4*scale_y)), color=(0, 0, 255), radius=2)
     return cvmat
 
 

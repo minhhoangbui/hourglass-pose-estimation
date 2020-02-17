@@ -74,7 +74,7 @@ class PosePredictor:
         else:
             heatmap = self.model(in_frame)[-1].detach()[0]
         end = time.time()
-        print("Inference time on %s: %0.3f" % (predictor.device, end - start))
+        print("Inference time on %s: %0.3f" % (self.device, end - start))
         kps = self.post_process_heatmap(heatmap)
 
         scale_x = frame.shape[1] * 1.0 / self.input_size[0]

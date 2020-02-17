@@ -29,7 +29,7 @@ from pose.utils.transform import *
 
 class MSCOCO(data.Dataset):
     def __init__(self, is_train=True, **kwargs):
-        self.is_train = is_train # training set or test set
+        self.is_train = is_train  # training set or test set
         self.inp_res = kwargs['inp_res']
         self.out_res = kwargs['out_res']
         self.sigma = kwargs['sigma']

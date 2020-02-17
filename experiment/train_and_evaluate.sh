@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-DATASET=wrists
+DATASET=se7en11
 NUM_STACKS=2
 NUM_BLOCKS=1
-DATASET_FOLDER=/home/hoang/datasets/JR-Wrist/test/AVC9003_20190902_204123/images/
-ANNOTATION=/home/hoang/datasets/JR-Wrist/test/AVC9003_20190902_204123/
-CHECKPOINT_PATH=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/
-TRAIN_BATCH=24
-TEST_BATCH=24
-GPUS=2,
-EVALUATION=true
-SCHEDULE='150 230'
-SUBSET='10 15'
+DATASET_FOLDER=/home/hoangbm/data/se7en11
+ANNOTATION=/home/hoangbm/data/se7en11
+CHECKPOINT_PATH=/mnt/ssd2/Users/hoangbm/checkpoint/pose-estimation
+TRAIN_BATCH=72
+TEST_BATCH=72
+GPUS=0,1
+EVALUATION=false
+SCHEDULE='250 300'
+SUBSET='4 5 6 7 8 9 10 11'
 MOBILE=true
-EPOCHS=260
-RESUME=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/wrists_s2_b1_mobile_all/checkpoint.pth.tar
+EPOCHS=350
+RESUME=/mnt/ssd2/Users/hoangbm/checkpoint/pose-estimation/se7en11_s2_b1_mobile_all/checkpoint.pth.tar
 
 KD_ALPHA=1.0
 TEACHER_CHECKPOINT=/mnt/hdd10tb/Users/hoang/checkpoint/pose-estimation/mscoco_v2_s8_b1_non-mobile_all/model_best.pth.tar

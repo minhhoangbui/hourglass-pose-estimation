@@ -10,7 +10,7 @@ def to_numpy(tensor):
     if torch.is_tensor(tensor):
         return tensor.detach().cpu().numpy()
     elif type(tensor).__module__ != 'numpy':
-        raise  ValueError("Cannot convert {} to numpy array".format(type(tensor)))
+        raise ValueError("Cannot convert {} to numpy array".format(type(tensor)))
     return tensor
 
 
@@ -22,19 +22,16 @@ def to_torch(ndarray):
                          .format(type(ndarray)))
 
 
-def save_checkpoint(state, preds, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar', snapshot=None):
+def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar', snapshot=None):
     """Save checkpoint and prediction during training"""
-    preds = to_numpy(preds)
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
-    scipy.io.savemat(os.path.join(checkpoint, 'preds.mat'), mdict={'preds': preds})
 
     if snapshot and state.epoch % snapshot == 0:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'checkpoint_{}.pth.tar'.format(state.epoch)))
 
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
-        scipy.io.savemat(os.path.join(checkpoint, 'preds_best.mat'), mdict={'preds': preds})
 
     return
 

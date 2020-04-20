@@ -12,8 +12,8 @@ import torch.optim
 import _init_path
 from pose import Bar
 from pose.utils.logger import Logger
-from pose.utils.evaluation import accuracy, AverageMeter, final_preds
-from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
+from pose.utils.evaluation import accuracy, AverageMeter
+from pose.utils.misc import save_checkpoint, adjust_learning_rate
 import pose.models as models
 from pose.loss.loss import JointsMSELoss
 import pose.datasets as datasets
@@ -123,15 +123,12 @@ def train(train_loader, model, t_model, criterion, optimizer, kdloss_alpha, idxs
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, idxs=None, out_res=64):
+def validate(val_loader, model, t_model, criterion, kdloss_alpha, idxs=None):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
     acces = AverageMeter()
-
-    # predictions
-    predictions = torch.Tensor(val_loader.dataset.__len__(), num_classes, 2)
 
     # switch to evaluate mode
     model.eval()
@@ -166,10 +163,6 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
 
             acc = accuracy(score_map, target.cpu(), idxs=idxs)
 
-            preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
-            for n in range(score_map.size(0)):
-                predictions[meta['index'][n], :, :] = preds[n, :, :]
-
             # measure accuracy and record loss
             losses.update(total_loss.item(), inputs.size(0))
             acces.update(acc[0], inputs.size(0))
@@ -179,7 +172,8 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
             end = time.time()
 
             # plot progress
-            bar.suffix = '({batch}/{size}) Data: {data:.6f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
+            bar.suffix = '({batch}/{size}) Data: {data:.6f}s | Batch: {bt:.3f}s | ' \
+                         'Total: {total:} | ETA: {eta:} | ' \
                          'Loss: {loss:.4f} | Acc: {acc: .4f}'.format(
                                 batch=i + 1,
                                 size=len(val_loader),
@@ -192,7 +186,7 @@ def validate(val_loader, model, t_model, criterion, num_classes, kdloss_alpha, i
                             )
             bar.next()
         bar.finish()
-    return losses.avg, acces.avg, predictions
+    return losses.avg, acces.avg
 
 
 def main(args):
@@ -209,7 +203,8 @@ def main(args):
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
     # create model
-    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
+    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else \
+        len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
@@ -218,7 +213,9 @@ def main(args):
                                        mobile=args.mobile)
     summary(model, (3, args.inp_res, args.inp_res), device='cpu')
 
-    print("==> creating teacher model '{}', stacks={}, blocks={}".format(args.arch, args.teacher_stacks, args.blocks))
+    print("==> creating teacher model '{}', stacks={}, blocks={}".format(args.arch,
+                                                                         args.teacher_stacks,
+                                                                         args.blocks))
     tmodel = load_teacher_models(arch=args.arch, blocks=args.blocks, stacks=args.teacher_stacks,
                                  t_checkpoint=args.teacher_checkpoint, num_classes=n_joints)
 
@@ -271,10 +268,8 @@ def main(args):
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
-        loss, acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
-                                          criterion=criterion, num_classes=n_joints,
-                                          kdloss_alpha=args.kdloss_alpha, out_res=args.out_res)
-        save_pred(predictions, checkpoint=checkpoint_path)
+        _, _ = validate(val_loader=val_loader, model=model, t_model=tmodel,
+                        criterion=criterion, kdloss_alpha=args.kdloss_alpha)
         return
 
     # train and eval
@@ -289,13 +284,14 @@ def main(args):
             val_loader.dataset.sigma *= args.sigma_decay
 
         # train for one epoch
-        train_loss, train_acc = train(train_loader=train_loader, model=model, t_model=tmodel, criterion=criterion,
+        train_loss, train_acc = train(train_loader=train_loader, model=model,
+                                      t_model=tmodel, criterion=criterion,
                                       kdloss_alpha=args.kdloss_alpha, optimizer=optimizer)
 
         # evaluate on validation set
-        valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, t_model=tmodel,
-                                                      criterion=criterion, num_classes=n_joints,
-                                                      kdloss_alpha=args.kdloss_alpha, out_res=args.out_res)
+        valid_loss, valid_acc = validate(val_loader=val_loader, model=model,
+                                         t_model=tmodel, criterion=criterion,
+                                         kdloss_alpha=args.kdloss_alpha)
 
         writer.add_scalar('Loss/train', train_loss, epoch)
         writer.add_scalar('Loss/test', valid_loss, epoch)
@@ -315,7 +311,7 @@ def main(args):
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
-        }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
+        }, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
     writer.close()
     logger.close()

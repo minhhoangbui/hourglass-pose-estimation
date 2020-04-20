@@ -29,11 +29,9 @@ class Se7en11(JointsDataset):
         self.pixel_std = 200
 
         if self.is_train:
-            self.annos = COCO(os.path.join(self.json, 'train', 'annotations.json'))
-            self.images = os.path.join(kwargs['image_path'], 'train', 'images')
+            self.annos = COCO(os.path.join(self.json, 'train_annotations.json'))
         else:
-            self.annos = COCO(os.path.join(self.json, 'test', 'annotations.json'))
-            self.images = os.path.join(kwargs['image_path'], 'test', 'images')
+            self.annos = COCO(os.path.join(self.json, 'test_annotations.json'))
 
         cats = [cat['name']
                 for cat in self.annos.loadCats(self.annos.getCatIds())]
@@ -150,7 +148,7 @@ class Se7en11(JointsDataset):
             joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
             joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
             # for ipt in range(self.num_joints):
-            for ipt, jpt in zip(range(self.num_joints), [4, 5, 7, 8, 9, 11]):
+            for ipt, jpt in zip(range(self.num_joints), [4, 8, 5, 9, 7, 11]):
                 joints_3d[ipt, 0] = obj['keypoints'][jpt * 3 + 0]
                 joints_3d[ipt, 1] = obj['keypoints'][jpt * 3 + 1]
                 joints_3d[ipt, 2] = 0

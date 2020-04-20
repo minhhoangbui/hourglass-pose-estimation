@@ -87,7 +87,7 @@ class PosePredictor:
 
 if __name__ == '__main__':
     args = {
-        'checkpoint': '/Users/minhhoang/models/se7en11_s2_b1_mobile_all/model_best.pth.tar',
+        'checkpoint': '/Users/minhhoang/models/se7en11_s2_b1_mobile_all/checkpoint.pth.tar',
         # 'checkpoint': '/mnt/ssd2/Users/hoangbm/checkpoint/pose-estimation/se7en11_s2_b1_mobile_all/model_best.pth.tar',
         'num_stacks': 2,
         'num_blocks': 1,
@@ -95,8 +95,8 @@ if __name__ == '__main__':
         'mobile': True,
         'input_size': (256, 256),
         'dataset': 'se7en11',
-        'bbox': [620, 220, 1360, 960],
-        'video': '/Users/minhhoang/pose-distillation-pytorch/data/se7en1/color1580956167912_0000.jpg',
+        'bbox': [500, 0, 955, 690],
+        'video': '/Users/minhhoang/Downloads/video.mp4',
         'image': '/Users/minhhoang/pose-distillation-pytorch/data/se7en11/color1581647146889_0002.jpg',
         'folder': '/Users/minhhoang/models/datasets/train/images'
     }
@@ -108,18 +108,50 @@ if __name__ == '__main__':
     img = args['image']
 
     # image
+    # frame = cv2.imread(img)
+    # cropped_frame = frame[y_min: y_max, x_min: x_max]
+    # start = time.time()
+    # kps = predictor.run(cropped_frame)
+    # end = time.time()
+    # kps[:, 0] += x_min
+    # kps[:, 1] += y_min
+    # for x, y in kps:
+    #     cv2.circle(frame, center=(x, y), color=(0, 0, 255), radius=5, thickness=-1)
+    # cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
+    # cv2.imshow("Results", frame)
+    # cv2.waitKey(0)
+    # print("Total inference time on %s: %0.3f" % (predictor.device, end - start))
 
-    # for img in image_list:
-    frame = cv2.imread(img)
-    cropped_frame = frame[y_min: y_max, x_min: x_max]
-    start = time.time()
-    kps = predictor.run(cropped_frame)
-    end = time.time()
-    kps[:, 0] += x_min
-    kps[:, 1] += y_min
-    for x, y in kps:
-        cv2.circle(frame, center=(x, y), color=(0, 0, 255), radius=5, thickness=-1)
-    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
-    cv2.imshow("Results", frame)
-    cv2.waitKey(0)
-    print("Total inference time on %s: %0.3f" % (predictor.device, end - start))
+    # video
+    if not os.path.isfile(args['video']):
+        raise FileNotFoundError()
+
+    reader = cv2.VideoCapture(args['video'])
+
+    if not reader.isOpened():
+        raise OSError('Cannot open video')
+    _, frame = reader.read()
+
+    while True:
+        _, frame = reader.read()
+        if frame is None:
+            break
+        cropped_frame = frame[y_min: y_max, x_min: x_max]
+        kps = predictor.run(cropped_frame)
+        kps[:, 0] += x_min
+        kps[:, 1] += y_min
+        for x, y in kps:
+            cv2.circle(frame, center=(x, y), color=(0, 0, 255), radius=5, thickness=-1)
+        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
+        cv2.imshow("Results", frame)
+        keypress = cv2.waitKey(25)
+        if keypress & 0xFF == ord('q'):
+            break
+
+        if keypress & 0xFF == ord(' '):
+            while True:
+                keypress = cv2.waitKey(1)
+                if keypress & 0xFF == ord(' '):
+                    break
+    cv2.destroyAllWindows()
+    reader.release()

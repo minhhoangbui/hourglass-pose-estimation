@@ -15,8 +15,8 @@ from torch.utils.tensorboard import SummaryWriter
 import _init_path
 from pose import Bar
 from pose.utils.logger import Logger
-from pose.utils.evaluation import accuracy, AverageMeter, final_preds
-from pose.utils.misc import save_checkpoint, save_pred, adjust_learning_rate
+from pose.utils.evaluation import accuracy, AverageMeter
+from pose.utils.misc import save_checkpoint, adjust_learning_rate
 import pose.models as models
 import pose.datasets as datasets
 from pose.loss.loss import JointsMSELoss
@@ -40,7 +40,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cudnn.benchmark = True
 
 
-def train(train_loader, model, criterion, optimizer, idxs=None):
+def train(train_loader, model, criterion, optimizer, pck, idxs=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -69,7 +69,7 @@ def train(train_loader, model, criterion, optimizer, idxs=None):
             score_map = output[-1]
         else:
             raise ValueError('Format failed!!!')
-        acc = accuracy(score_map, target, idxs=idxs, thr=0.2)
+        acc = accuracy(score_map, target, idxs=idxs, thr=pck)
 
         # measure accuracy and record loss
         losses.update(loss.item(), inputs.size(0))
@@ -101,14 +101,11 @@ def train(train_loader, model, criterion, optimizer, idxs=None):
     return losses.avg, acces.avg
 
 
-def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
+def validate(val_loader, model, criterion, pck, idxs=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
     acces = AverageMeter()
-
-    # predictions
-    predictions = torch.Tensor(val_loader.dataset.__len__(), num_classes, 2)
 
     # switch to evaluate mode
     model.eval()
@@ -135,12 +132,7 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
             else:  # single output
                 raise ValueError('Format failed!!!')
 
-            acc = accuracy(score_map, target.cpu(), idxs=idxs, thr=0.2)
-
-            # NOTE: Conflict when using with COCO - Correction is done for integration but not confirmed
-            preds = final_preds(score_map, meta['center'], meta['scale'], [out_res, out_res])
-            for n in range(score_map.size(0)):
-                predictions[meta['index'][n], :, :] = preds[n, :, :]
+            acc = accuracy(score_map, target.cpu(), idxs=idxs, thr=pck)
 
             # measure accuracy and record loss
             losses.update(loss.item(), inputs.size(0))
@@ -164,7 +156,7 @@ def validate(val_loader, model, criterion, num_classes, idxs=None, out_res=64):
                             )
             bar.next()
         bar.finish()
-    return losses.avg, acces.avg, predictions
+    return losses.avg, acces.avg
 
 
 def main(args):
@@ -182,7 +174,8 @@ def main(args):
 
     # create model
 
-    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else len(args.subset)
+    n_joints = datasets.__dict__[args.dataset].n_joints if args.subset is None else \
+        len(args.subset)
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks,
@@ -245,9 +238,9 @@ def main(args):
     # evaluation only
     if args.evaluate:
         print('\nEvaluation only')
-        loss, acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
-                                          num_classes=n_joints, out_res=args.out_res, idxs=idxs)
-        save_pred(predictions, checkpoint=checkpoint_path)
+        _, _ = validate(val_loader=val_loader, model=model,
+                        criterion=criterion, pck=args.pck,
+                        idxs=idxs)
         return
 
     # train and eval
@@ -263,11 +256,12 @@ def main(args):
 
         # train for one epoch
         train_loss, train_acc = train(train_loader=train_loader, model=model, criterion=criterion,
-                                      optimizer=optimizer, idxs=idxs)
+                                      optimizer=optimizer, idxs=idxs, pck=args.pck)
 
         # evaluate on validation set
-        valid_loss, valid_acc, predictions = validate(val_loader=val_loader, model=model, criterion=criterion,
-                                                      num_classes=n_joints, out_res=args.out_res, idxs=idxs)
+        valid_loss, valid_acc = validate(val_loader=val_loader, model=model,
+                                         criterion=criterion, idxs=idxs,
+                                         pck=args.pck)
         writer.add_scalar('Loss/train', train_loss, epoch)
         writer.add_scalar('Loss/test', valid_loss, epoch)
         writer.add_scalar('Acc/train', train_acc, epoch)
@@ -286,7 +280,7 @@ def main(args):
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
-        }, predictions, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
+        }, is_best, checkpoint=checkpoint_path, snapshot=args.snapshot)
 
     writer.close()
     logger.close()
@@ -372,6 +366,8 @@ if __name__ == '__main__':
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
+                        help='evaluate model on validation set')
+    parser.add_argument('--pck', type=float, default=0.3,
                         help='evaluate model on validation set')
 
     main(parser.parse_args())

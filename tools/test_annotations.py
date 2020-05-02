@@ -1,7 +1,6 @@
 import json
 import cv2
 import os
-import time
 
 
 def draw_bbox_keypoints(images_dir, annotation_file):

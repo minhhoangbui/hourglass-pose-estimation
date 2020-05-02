@@ -6,8 +6,6 @@ from pathlib import Path
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent))
 import glob
 import torch
-import torch.nn.parallel
-import torch.optim
 import cv2
 from collections import OrderedDict
 import experiment._init_path

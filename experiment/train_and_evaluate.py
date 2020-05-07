@@ -165,9 +165,10 @@ def main(args):
     idxs_str = idxs_str.strip('[]')
     idxs_str = re.sub(r'\s+', '', idxs_str)
     checkpoint_path = os.path.join(args.checkpoint,
-                                   '{}_s{}_b{}_{}_{}'.format(args.dataset, args.stacks,
-                                                             args.blocks, 'mobile' if args.mobile else 'non-mobile',
-                                                             'all' if args.subset is None else idxs_str))
+                                   '{}_s{}_b{}_{}_{}_{}'.format(args.dataset, args.stacks,
+                                                                args.blocks, 'mobile' if args.mobile else 'non-mobile',
+                                                                'all' if args.subset is None else idxs_str,
+                                                                args.skip_mode))
 
     if not os.path.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
@@ -181,7 +182,8 @@ def main(args):
     model = models.__dict__[args.arch](num_stacks=args.stacks,
                                        num_blocks=args.blocks,
                                        num_classes=n_joints,
-                                       mobile=args.mobile)
+                                       mobile=args.mobile,
+                                       skip_mode=args.skip_mode)
     summary(model, (3, args.inp_res, args.inp_res), device='cpu')
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
 
@@ -315,6 +317,8 @@ if __name__ == '__main__':
                         help='Number of residual modules at each location in the hourglass')
     parser.add_argument('--mobile', action='store_true',
                         help='Decide to use mobile architecture')
+    parser.add_argument('--skip_mode', default='sum', type=str,
+                        help='Decide which skip_mode to use in residual architecture')
     parser.add_argument('--subset', type=int, nargs='+', default=None,
                         help='Decide subset when training or evaluating')
 

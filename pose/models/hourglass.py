@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -49,12 +50,16 @@ class Bottleneck(nn.Module):
 
 
 class Hourglass(nn.Module):
-    def __init__(self, block, num_blocks, planes, depth, mobile):
+    def __init__(self, block, num_blocks, planes, depth, mobile, skip_mode='concat'):
         super(Hourglass, self).__init__()
         self.depth = depth
         self.block = block
         self.mobile = mobile
         self.hg = self._make_hour_glass(block, num_blocks, planes, depth)
+        if skip_mode == 'concat':
+            self.concat_conv = nn.Conv2d(in_channels=planes * block.expansion * 2,
+                                         out_channels=planes * block.expansion,
+                                         kernel_size=1, padding=0)
 
     def _make_residual(self, block, num_blocks, planes):
         layers = []
@@ -84,7 +89,11 @@ class Hourglass(nn.Module):
             low2 = self.hg[n-1][3](low1)
         low3 = self.hg[n-1][2](low2)
         up2 = F.interpolate(low3, scale_factor=2, mode='nearest')
-        out = up1 + up2
+        if hasattr(self, 'concat_conv'):
+            out = torch.cat([up1, up2], dim=1)
+            out = self.concat_conv(out)
+        else:
+            out = up1 + up2
         return out
 
     def forward(self, x):
@@ -93,7 +102,8 @@ class Hourglass(nn.Module):
 
 class HourglassNet(nn.Module):
     """Hourglass model from Newell et al ECCV 2016"""
-    def __init__(self, block, num_stacks=2, num_blocks=4, num_classes=16, mobile=False):
+    def __init__(self, block, num_stacks=2, num_blocks=4,
+                 num_classes=16, mobile=False, skip_mode='sum'):
         super(HourglassNet, self).__init__()
 
         self.mobile = mobile
@@ -113,7 +123,8 @@ class HourglassNet(nn.Module):
         ch = self.num_feats*block.expansion
         hg, res, fc, score, fc_, score_ = [], [], [], [], [], []
         for i in range(num_stacks):
-            hg.append(Hourglass(block, num_blocks, self.num_feats, 4, mobile=self.mobile))
+            hg.append(Hourglass(block, num_blocks, self.num_feats, 4,
+                                mobile=self.mobile, skip_mode=skip_mode))
             res.append(self._make_residual(block, self.num_feats, num_blocks))
             fc.append(self._make_fc(ch, ch))
             score.append(nn.Conv2d(ch, num_classes, kernel_size=1, bias=True))
@@ -177,6 +188,7 @@ class HourglassNet(nn.Module):
 
 
 def hg(**kwargs):
-    model = HourglassNet(Bottleneck, num_stacks=kwargs['num_stacks'], num_blocks=kwargs['num_blocks'],
-                         num_classes=kwargs['num_classes'], mobile=kwargs['mobile'])
+    model = HourglassNet(Bottleneck, num_stacks=kwargs['num_stacks'],
+                         num_blocks=kwargs['num_blocks'], num_classes=kwargs['num_classes'],
+                         mobile=kwargs['mobile'], skip_mode=kwargs['skip_mode'])
     return model

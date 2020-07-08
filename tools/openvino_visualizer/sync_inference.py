@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 
-
 from __future__ import print_function, absolute_import
 import sys
 import os
 from argparse import ArgumentParser
-from torchvision.transforms import transforms
-import cv2
-import numpy as np
 import logging as log
 from time import time
 from openvino.inference_engine import IENetwork, IEPlugin
-from utils import *
+from tools.openvino_visualizer.utils import *
 
 
 def build_argparser():
@@ -27,8 +23,6 @@ def build_argparser():
                         help="Specify the target device to infer on; CPU, GPU, FPGA or MYRIAD is acceptable. Sample "
                              "will look for a suitable plugin for device specified (CPU by default)", default="CPU",
                         type=str)
-    parser.add_argument("--labels", help="Labels mapping file", default=None, type=str)
-    parser.add_argument("-nt", "--number_top", help="Number of top results", default=10, type=int)
     parser.add_argument("-ni", "--number_iter", help="Number of inference iterations", default=1, type=int)
     parser.add_argument("-pc", "--perf_counts", help="Report performance counters", default=False, action="store_true")
 
@@ -71,7 +65,7 @@ def main():
     n, c, h, w = net.inputs[input_blob].shape
     images = np.ndarray(shape=(n, c, h, w))
 
-    image = cv2.imread(args.input[0])
+    image = render_image = cv2.imread(args.input[0])
     scale_x = image.shape[1] / w
     scale_y = image.shape[0] / h
     if image.shape[:-1] != (h, w):
@@ -108,20 +102,19 @@ def main():
         log.info("Performance counters:")
         print("{:<70} {:<15} {:<15} {:<15} {:<10}".format('name', 'layer_type', 'exet_type', 'status', 'real_time, us'))
         for layer, stats in perf_counts.items():
-            print ("{:<70} {:<15} {:<15} {:<15} {:<10}".format(layer, stats['layer_type'], stats['exec_type'],
+            print("{:<70} {:<15} {:<15} {:<15} {:<10}".format(layer, stats['layer_type'], stats['exec_type'],
                                                                stats['status'], stats['real_time']))
 
     # Processing output blob
     log.info("Processing output blob")
     heatmap = res[out_blob][0, :, :, :]
-    # kps = post_process_heatmap(heatmap)
+
     kps = extract_keypoints(heatmap)
-    render_image = cv2.imread(args.input[0])
-    # render_kps(render_image, kps, scale_x, scale_y)
+
     visualize(render_image, kps, scale_x, scale_y)
 
-    cv2.imshow('x', render_image)
-    cv2.waitKey(0)
+    # cv2.imshow('x', render_image)
+    # cv2.waitKey(0)
 
     del exec_net
     del plugin

@@ -4,12 +4,10 @@ from __future__ import print_function, absolute_import
 import sys
 import os
 from argparse import ArgumentParser
-import cv2
 import time
 import logging as log
 from openvino.inference_engine import IENetwork, IEPlugin
-import numpy as np
-from utils import *
+from .utils import *
 
 
 def build_argparser():
@@ -50,7 +48,7 @@ def main():
 
     if plugin.device == "CPU":
         supported_layers = plugin.get_supported_layers(net)
-        not_supported_layers = [l for l in net.layers.keys() if l not in supported_layers]
+        not_supported_layers = [key for key in net.layers.keys() if key not in supported_layers]
         if len(not_supported_layers) != 0:
             log.error("Following layers are not supported by the plugin for specified device {}:\n {}".
                       format(plugin.device, ', '.join(not_supported_layers)))
@@ -124,11 +122,10 @@ def main():
             heatmap = res[0, :, :, :]
             kps = extract_keypoints(heatmap)
 
-            # render_kps(frame, kps, scale_w, scale_h)
             visualize(frame, kps, scale_w, scale_h)
 
             # Draw performance stats
-            inf_time_message = "Inference time: N\A for async mode" if is_async_mode else \
+            inf_time_message = "Inference time: N/A for async mode" if is_async_mode else \
                 "Inference time: {:.3f} ms".format(det_time * 1000)
             render_time_message = "OpenCV rendering time: {:.3f} ms".format(render_time * 1000)
             async_mode_message = "Async mode is on. Processing request {}".format(cur_request_id) if is_async_mode else \

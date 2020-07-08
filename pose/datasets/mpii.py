@@ -1,132 +1,218 @@
-from __future__ import absolute_import, print_function
-"""
-(0 - r ankle, 1 - r knee, 2 - r hip, 3 - l hip, 4 - l knee, 5 - l ankle, 6 - pelvis, 7 - thorax, 
-8 - upper neck, 9 - head top, 10 - r wrist, 11 - r elbow, 12 - r shoulder, 13 - l shoulder, 14 - l elbow, 15 - l wrist)
-"""
-import json
-import random
-import torch.utils.data as data
+# ------------------------------------------------------------------------------
+# Copyright (c) Microsoft
+# Licensed under the MIT License.
+# Written by Bin Xiao (Bin.Xiao@microsoft.com)
+# ------------------------------------------------------------------------------
 
-from pose.utils.transform import *
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+from collections import OrderedDict
+import logging
+import os
+import json_tricks as json
+import torch
+import numpy as np
+from scipy.io import loadmat, savemat
+from torchvision.transforms import transforms
+from pose.utils.imutils import load_BGR_image
 
 
-class MPII(data.Dataset):
-    def __init__(self, is_train=True, **kwargs):
-        self.img_folder = kwargs['image_path']  # root image folders
-        self.json_file = kwargs['anno_path']
-        self.is_train = is_train  # training set or test set
-        self.inp_res = kwargs['inp_res']
-        self.out_res = kwargs['out_res']
-        self.sigma = kwargs['sigma']
-        self.scale_factor = kwargs['scale_factor']
-        self.rot_factor = kwargs['rot_factor']
-        self.label_type = kwargs['label_type']
-        self.subset = kwargs['subset']
+from pose.datasets.common import JointsDataset
 
-        with open(self.json_file) as anno_file:
-            self.anno = json.load(anno_file)
 
-        self.train_list, self.valid_list = [], []
-        for idx, val in enumerate(self.anno):
-            if val['isValidation']:
-                self.valid_list.append(idx)
-            else:
-                self.train_list.append(idx)
-        self.mean, self.std = self._compute_mean()
+logger = logging.getLogger(__name__)
+
+
+class MPII(JointsDataset):
+    def __init__(self, is_train, **kwargs):
+        super().__init__(is_train, **kwargs)
+        self.num_joints = 16
+
+        self.flip_pairs = [[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
+        if self.is_train:
+            self.image_set = 'train'
+        else:
+            self.image_set = 'valid'
+
+        self.db = self._get_db()
+        mean, std = self._compute_mean()
+        mean = mean.tolist()
+        std = std.tolist()
+
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std)
+        ])
+
+        # if is_train and cfg.DATASET.SELECT_DATA:
+        #     self.db = self.select_data(self.db)
+
+        logger.info('=> load {} samples'.format(len(self.db)))
 
     def _compute_mean(self):
-        meanstd_file = './data/mpii/mean.pth.tar'
+        meanstd_file = './data/mpii_v2/mean.pth.tar'
         if os.path.isfile(meanstd_file):
             meanstd = torch.load(meanstd_file)
         else:
+            print('==> compute mean')
             mean = torch.zeros(3)
             std = torch.zeros(3)
-            for index in self.train_list:
-                a = self.anno[index]
-                img_path = os.path.join(self.img_folder, a['img_paths'])
-                img = load_BGR_image(img_path)  # CxHxW
+            cnt = 0
+            for sample in self.db:
+                cnt += 1
+                print('{} | {}'.format(cnt, len(self.db)))
+                img = load_BGR_image(sample['image'])  # CxHxW
                 mean += img.view(img.size(0), -1).mean(1)
                 std += img.view(img.size(0), -1).std(1)
-            mean /= len(self.train_list)
-            std /= len(self.train_list)
+            mean /= len(self.db)
+            std /= len(self.db)
             meanstd = {
                 'mean': mean,
                 'std': std,
                 }
             torch.save(meanstd, meanstd_file)
         if self.is_train:
-            print(' Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
-            print(' Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
+            print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
+            print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
 
         return meanstd['mean'], meanstd['std']
 
-    def __getitem__(self, index):
-        sf = self.scale_factor
-        rf = self.rot_factor
-        if self.is_train:
-            a = self.anno[self.train_list[index]]
-        else:
-            a = self.anno[self.valid_list[index]]
+    def _get_db(self):
+        # create train/val split
+        file_name = os.path.join(self.json,
+                                 self.image_set+'.json')
+        with open(file_name) as anno_file:
+            anno = json.load(anno_file)
 
-        img_path = os.path.join(self.img_folder, a['img_paths'])
-        pts = torch.Tensor(a['joint_self'])
+        gt_db = []
+        for a in anno:
+            image_name = a['image']
 
-        c = torch.Tensor(a['objpos'])
-        s = a['scale_provided']
+            c = np.array(a['center'], dtype=np.float)
+            s = np.array([a['scale'], a['scale']], dtype=np.float)
 
-        # Adjust center/scale slightly to avoid cropping limbs
-        if c[0] != -1:
-            c[1] = c[1] + 15 * s
-            s = s * 1.25
+            # Adjust center/scale slightly to avoid cropping limbs
+            if c[0] != -1:
+                c[1] = c[1] + 15 * s[1]
+                s = s * 1.25
 
-        # For single-person pose estimation with a centered/scaled figure
+            # MPII uses matlab format, index is based 1,
+            # we should first convert to 0-based index
+            c = c - 1
 
-        n_parts = pts.size(0) if self.subset is None else len(self.subset)
+            joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+            joints_3d_vis = np.zeros((self.num_joints,  3), dtype=np.float)
+            if self.image_set != 'test':
+                joints = np.array(a['joints'])
+                joints[:, 0:2] = joints[:, 0:2] - 1
+                joints_vis = np.array(a['joints_vis'])
+                assert len(joints) == self.num_joints, \
+                    'joint num diff: {} vs {}'.format(len(joints),
+                                                      self.num_joints)
 
-        img = load_BGR_image(img_path)  # CxHxW
+                joints_3d[:, 0:2] = joints[:, 0:2]
+                joints_3d_vis[:, 0] = joints_vis[:]
+                joints_3d_vis[:, 1] = joints_vis[:]
 
-        r = 0
-        if self.is_train:
-            s = s*torch.randn(1).mul_(sf).add_(1).clamp(1-sf, 1+sf)[0]
-            r = torch.randn(1).mul_(rf).clamp(-2*rf, 2*rf)[0] if random.random() <= 0.6 else 0
+            gt_db.append({
+                'image': os.path.join(self.images, image_name),
+                'center': c,
+                'scale': s,
+                'joints_3d': joints_3d,
+                'joints_3d_vis': joints_3d_vis,
+                'imgnum': 0,
+                })
 
-            # Flip
-            if random.random() <= 0.5:
-                img = torch.from_numpy(fliplr(img.numpy())).float()
-                pts = shufflelr(pts, width=img.size(2), dataset='mpii')
-                c[0] = img.size(2) - c[0]
+        return gt_db
 
-            # Color
-            img[0, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
-            img[1, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
-            img[2, :, :].mul_(random.uniform(0.8, 1.2)).clamp_(0, 1)
+    def evaluate(self, cfg, preds, output_dir, *args, **kwargs):
+        # convert 0-based index to 1-based index
+        preds = preds[:, :, 0:2] + 1.0
 
-        # Prepare image and ground-truth map
-        inp = crop(img, c, s, [self.inp_res, self.inp_res], rot=r)
-        inp = color_normalize(inp, self.mean, self.std)
+        if output_dir:
+            pred_file = os.path.join(output_dir, 'pred.mat')
+            savemat(pred_file, mdict={'preds': preds})
 
-        # Generate ground truth
-        tpts = pts.clone()
-        target = torch.zeros(n_parts, self.out_res, self.out_res)
+        if 'test' in cfg.DATASET.TEST_SET:
+            return {'Null': 0.0}, 0.0
 
-        for i in range(n_parts):
-            # if tpts[i, 2] > 0: # This is evil!!
-            if tpts[self.subset[i], 1] > 0:
-                tpts[self.subset[i], 0:2] = to_torch(transform(tpts[self.subset[i], 0:2]+1, c, s,
-                                                               [self.out_res, self.out_res], rot=r))
-                target[i], _ = draw_labelmap(target[i], tpts[self.subset[i]]-1, self.sigma, type=self.label_type)
+        SC_BIAS = 0.6
+        threshold = 0.5
 
-        # Meta info
-        meta = {'index': index, 'center': c, 'scale': s,
-                'pts': pts, 'tpts': tpts}
+        gt_file = os.path.join(cfg.DATASET.ROOT,
+                               'annot',
+                               'gt_{}.mat'.format(cfg.DATASET.TEST_SET))
+        gt_dict = loadmat(gt_file)
+        dataset_joints = gt_dict['dataset_joints']
+        jnt_missing = gt_dict['jnt_missing']
+        pos_gt_src = gt_dict['pos_gt_src']
+        headboxes_src = gt_dict['headboxes_src']
 
-        return inp, target, meta
+        pos_pred_src = np.transpose(preds, [1, 2, 0])
 
-    def __len__(self):
-        if self.is_train:
-            return len(self.train_list)
-        else:
-            return len(self.valid_list)
+        head = np.where(dataset_joints == 'head')[1][0]
+        lsho = np.where(dataset_joints == 'lsho')[1][0]
+        lelb = np.where(dataset_joints == 'lelb')[1][0]
+        lwri = np.where(dataset_joints == 'lwri')[1][0]
+        lhip = np.where(dataset_joints == 'lhip')[1][0]
+        lkne = np.where(dataset_joints == 'lkne')[1][0]
+        lank = np.where(dataset_joints == 'lank')[1][0]
+
+        rsho = np.where(dataset_joints == 'rsho')[1][0]
+        relb = np.where(dataset_joints == 'relb')[1][0]
+        rwri = np.where(dataset_joints == 'rwri')[1][0]
+        rkne = np.where(dataset_joints == 'rkne')[1][0]
+        rank = np.where(dataset_joints == 'rank')[1][0]
+        rhip = np.where(dataset_joints == 'rhip')[1][0]
+
+        jnt_visible = 1 - jnt_missing
+        uv_error = pos_pred_src - pos_gt_src
+        uv_err = np.linalg.norm(uv_error, axis=1)
+        headsizes = headboxes_src[1, :, :] - headboxes_src[0, :, :]
+        headsizes = np.linalg.norm(headsizes, axis=0)
+        headsizes *= SC_BIAS
+        scale = np.multiply(headsizes, np.ones((len(uv_err), 1)))
+        scaled_uv_err = np.divide(uv_err, scale)
+        scaled_uv_err = np.multiply(scaled_uv_err, jnt_visible)
+        jnt_count = np.sum(jnt_visible, axis=1)
+        less_than_threshold = np.multiply((scaled_uv_err <= threshold),
+                                          jnt_visible)
+        PCKh = np.divide(100.*np.sum(less_than_threshold, axis=1), jnt_count)
+
+        # save
+        rng = np.arange(0, 0.5+0.01, 0.01)
+        pckAll = np.zeros((len(rng), 16))
+
+        for r in range(len(rng)):
+            threshold = rng[r]
+            less_than_threshold = np.multiply(scaled_uv_err <= threshold,
+                                              jnt_visible)
+            pckAll[r, :] = np.divide(100.*np.sum(less_than_threshold, axis=1),
+                                     jnt_count)
+
+        PCKh = np.ma.array(PCKh, mask=False)
+        PCKh.mask[6:8] = True
+
+        jnt_count = np.ma.array(jnt_count, mask=False)
+        jnt_count.mask[6:8] = True
+        jnt_ratio = jnt_count / np.sum(jnt_count).astype(np.float64)
+
+        name_value = [
+            ('Head', PCKh[head]),
+            ('Shoulder', 0.5 * (PCKh[lsho] + PCKh[rsho])),
+            ('Elbow', 0.5 * (PCKh[lelb] + PCKh[relb])),
+            ('Wrist', 0.5 * (PCKh[lwri] + PCKh[rwri])),
+            ('Hip', 0.5 * (PCKh[lhip] + PCKh[rhip])),
+            ('Knee', 0.5 * (PCKh[lkne] + PCKh[rkne])),
+            ('Ankle', 0.5 * (PCKh[lank] + PCKh[rank])),
+            ('Mean', np.sum(PCKh * jnt_ratio)),
+            ('Mean@0.1', np.sum(pckAll[11, :] * jnt_ratio))
+        ]
+        name_value = OrderedDict(name_value)
+
+        return name_value, name_value['Mean']
 
 
 def mpii(**kwargs):
@@ -134,3 +220,4 @@ def mpii(**kwargs):
 
 
 mpii.n_joints = 16
+

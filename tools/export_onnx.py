@@ -21,7 +21,7 @@ def main(args):
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
     model = models.__dict__[args.arch](num_stacks=args.stacks, num_blocks=args.blocks, num_classes=args.num_classes,
-                                       mobile=args.mobile)
+                                       mobile=args.mobile, skip_mode=None)
     model.eval()
 
     # optionally resume from a checkpoint
@@ -48,7 +48,7 @@ def main(args):
         print("=> no checkpoint found at '{}'".format(args.checkpoint))
 
     dummy_input = torch.randn(1, 3, args.in_res, args.in_res)
-    torch.onnx.export(model, dummy_input, args.out_onnx)
+    torch.onnx.export(model, dummy_input, args.out_onnx, opset_version=10)
 
 
 if __name__ == '__main__':
@@ -73,4 +73,6 @@ if __name__ == '__main__':
                         help='input shape 128 or 256')
     parser.add_argument('--mobile', action='store_true',
                         help='Decide to use mobile architecture')
+    parser.add_argument('--skip_mode', default='sum', type=str,
+                        help='Decide which skip_mode to use in residual architecture')
     main(parser.parse_args())

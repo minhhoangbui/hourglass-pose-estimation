@@ -1,0 +1,37 @@
+DATASET:
+  name: 'mpii'
+  image_path: '/mnt/hdd3tb/Datasets/MPII/images'
+  annotation_path: '/mnt/hdd3tb/Datasets/MPII/annotations'
+  inp_res: 256
+  out_res: 64
+  flip: True
+  sigma: 0.1
+  scale_factor: 0.25
+  rot_factor: 30
+  label_type: 'Gaussian' # Gaussian or Cauchy
+MODEL:
+  arch: 'hg'
+  num_stacks: 2
+  num_blocks: 1
+  mobile: True
+  skip_mode: 'sum' # sum or concat
+  subset: []
+TRAIN:
+  num_workers: 4
+  epochs: 80
+  start_epoch: 0
+  train_batch: 96
+  test_batch: 96
+  learning_rate: 0.0025
+  momentum: 0
+  weight_decay: 0
+  schedule: [50, 65]
+  gamma: 0.1
+  sigma_decay: 0
+MISC:
+  GPU: '0,1'
+  checkpoint: '/mnt/hdd3tb/Users/hoang/checkpoint/pose-estimation'
+  snapshot: 0
+  resume: ''
+  evaluate: False
+  pck: 0.5

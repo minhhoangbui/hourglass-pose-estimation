@@ -1,3 +1,9 @@
+# ------------------------------------------------------------------------------
+# Copyright (c) Microsoft
+# Licensed under the MIT License.
+# Written by Bin Xiao (Bin.Xiao@microsoft.com)
+# ------------------------------------------------------------------------------
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -5,16 +11,12 @@ from __future__ import print_function
 from collections import OrderedDict
 import logging
 import os
-import json_tricks as json
-import torch
+import json
+
 import numpy as np
 from scipy.io import loadmat, savemat
-from torchvision.transforms import transforms
-from pose.utils.imutils import load_BGR_image
-
 
 from pose.datasets.common import JointsDataset
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class MPII(JointsDataset):
     def __init__(self, is_train, **kwargs):
         super().__init__(is_train, **kwargs)
         self.num_joints = 16
-
+        self.meanstd_file = './data/mpii/mean.pth.tar'
         self.flip_pairs = [[0, 5], [1, 4], [2, 3], [10, 15], [11, 14], [12, 13]]
         if self.is_train:
             self.image_set = 'train'
@@ -32,52 +34,17 @@ class MPII(JointsDataset):
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
-        mean = mean.tolist()
-        std = std.tolist()
-
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
-        ])
-
+        self.transform = self._get_transformation(mean, std)
         # if is_train and cfg.DATASET.SELECT_DATA:
         #     self.db = self.select_data(self.db)
 
         logger.info('=> load {} samples'.format(len(self.db)))
 
-    def _compute_mean(self):
-        meanstd_file = './data/mpii_v2/mean.pth.tar'
-        if os.path.isfile(meanstd_file):
-            meanstd = torch.load(meanstd_file)
-        else:
-            print('==> compute mean')
-            mean = torch.zeros(3)
-            std = torch.zeros(3)
-            cnt = 0
-            for sample in self.db:
-                cnt += 1
-                print('{} | {}'.format(cnt, len(self.db)))
-                img = load_BGR_image(sample['image'])  # CxHxW
-                mean += img.view(img.size(0), -1).mean(1)
-                std += img.view(img.size(0), -1).std(1)
-            mean /= len(self.db)
-            std /= len(self.db)
-            meanstd = {
-                'mean': mean,
-                'std': std,
-                }
-            torch.save(meanstd, meanstd_file)
-        if self.is_train:
-            print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
-            print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
-
-        return meanstd['mean'], meanstd['std']
-
     def _get_db(self):
         # create train/val split
         file_name = os.path.join(self.json,
                                  self.image_set+'.json')
-        with open(file_name) as anno_file:
+        with open(file_name, 'r') as anno_file:
             anno = json.load(anno_file)
 
         gt_db = []
@@ -214,3 +181,4 @@ def mpii(**kwargs):
 
 
 mpii.n_joints = 16
+

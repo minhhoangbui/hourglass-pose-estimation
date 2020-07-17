@@ -1,11 +1,10 @@
 import logging
 import os
-from torchvision.transforms import transforms
-import torch
+
 import numpy as np
 from crowdposetools.coco import COCO
 from pose.datasets.common import JointsDataset
-from pose.utils.imutils import load_BGR_image
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +20,7 @@ class CrowdPose(JointsDataset):
         self.image_width = kwargs['inp_res']
         self.image_height = kwargs['inp_res']
         self.aspect_ratio = 1.0
+        self.meanstd_file = './data/crowdpose/mean.pth.tar'
         if self.is_train:
             self.coco = COCO(os.path.join(self.json, 'crowdpose_train.json'))
         else:
@@ -28,42 +28,12 @@ class CrowdPose(JointsDataset):
 
         self.num_joints = 14
         self.flip_pairs = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11)]
-        self.db = self._load_data()
-        mean, std = self._compute_mean()
-        mean = mean.tolist()
-        std = std.tolist()
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
-        ])
-        logger.info('=> load {} samples'.format(len(self.db)))
 
-    def _compute_mean(self):
-        meanstd_file = './data/crowdpose/mean.pth.tar'
-        if os.path.isfile(meanstd_file):
-            meanstd = torch.load(meanstd_file)
-        else:
-            print('==> compute mean')
-            mean = torch.zeros(3)
-            std = torch.zeros(3)
-            cnt = 0
-            for sample in self.db:
-                cnt += 1
-                print('{} | {}'.format(cnt, len(self.db)))
-                img = load_BGR_image(sample['image'])  # CxHxW
-                mean += img.view(img.size(0), -1).mean(1)
-                std += img.view(img.size(0), -1).std(1)
-            mean /= len(self.db)
-            std /= len(self.db)
-            meanstd = {
-                'mean': mean,
-                'std': std,
-            }
-            torch.save(meanstd, meanstd_file)
-        if self.is_train:
-            print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
-            print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
-        return meanstd['mean'], meanstd['std']
+        self.db = self._get_db()
+        mean, std = self._compute_mean()
+        self._get_transformation(mean, std)
+
+        logger.info('=> load {} samples'.format(len(self.db)))
 
     def _load_data(self):
         gt_db = []

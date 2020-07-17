@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pose.loss.mse import MSELoss
 
 __all__ = ['HourglassNet', 'hg']
 
@@ -56,6 +57,7 @@ class Hourglass(nn.Module):
         self.block = block
         self.mobile = mobile
         self.hg = self._make_hour_glass(block, num_blocks, planes, depth)
+        assert skip_mode in ['sum', 'concat']
         if skip_mode == 'concat':
             self.concat_conv = nn.Conv2d(in_channels=planes * block.expansion * 2,
                                          out_channels=planes * block.expansion,
@@ -138,6 +140,8 @@ class HourglassNet(nn.Module):
         self.fc_ = nn.ModuleList(fc_)
         self.score_ = nn.ModuleList(score_)
 
+        self.criterion = MSELoss(use_target_weight=True)
+
     def _make_residual(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -183,8 +187,13 @@ class HourglassNet(nn.Module):
                 fc_ = self.fc_[i](y)
                 score_ = self.score_[i](score)
                 x = x + fc_ + score_
-
         return out
+
+    def compute_loss(self, outputs, target, target_weight):
+        loss = 0
+        for o in outputs:
+            loss += self.criterion(o, target, target_weight)
+        return loss
 
 
 def hg(**kwargs):
@@ -192,3 +201,12 @@ def hg(**kwargs):
                          num_blocks=kwargs['num_blocks'], num_classes=kwargs['num_classes'],
                          mobile=kwargs['mobile'], skip_mode=kwargs['skip_mode'])
     return model
+
+
+if __name__ == '__main__':
+    import torch
+    from torchsummary import summary
+    dummy_variable = torch.ones((1, 3, 256, 256))
+    model = HourglassNet(Bottleneck, num_stacks=2, num_classes=16,
+                         num_blocks=1, mobile=True, skip_mode='sum')
+    summary(model, (3, 256, 256), device='cpu')

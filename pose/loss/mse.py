@@ -11,9 +11,9 @@ from __future__ import print_function
 import torch.nn as nn
 
 
-class JointsMSELoss(nn.Module):
+class MSELoss(nn.Module):
     def __init__(self, use_target_weight):
-        super(JointsMSELoss, self).__init__()
+        super(MSELoss, self).__init__()
         self.criterion = nn.MSELoss(reduction='mean')
         self.use_target_weight = use_target_weight
 

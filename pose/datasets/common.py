@@ -13,13 +13,16 @@ import logging
 import random
 
 import cv2
+import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torchvision.transforms import transforms
 
 from pose.utils.ms_transforms import get_affine_transform
 from pose.utils.ms_transforms import affine_transform
 from pose.utils.ms_transforms import fliplr_joints
+from pose.utils.imutils import load_BGR_image
 
 
 logger = logging.getLogger(__name__)
@@ -31,7 +34,7 @@ class JointsDataset(Dataset):
         self.pixel_std = 200
         self.flip_pairs = []
         self.images = kwargs['image_path']
-        self.json = kwargs['anno_path']
+        self.json = kwargs['annotation_path']
 
         self.is_train = is_train
         self.scale_factor = kwargs['scale_factor']
@@ -43,6 +46,42 @@ class JointsDataset(Dataset):
         self.sigma = kwargs['sigma']
         self.db = []
         self.transform = None
+        self.meanstd_file = None
+
+    def _get_transformation(self, mean, std):
+        mean = mean.tolist()
+        std = std.tolist()
+        return transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std)
+        ])
+
+    def _compute_mean(self):
+        if os.path.isfile(self.meanstd_file):
+            meanstd = torch.load(self.meanstd_file)
+        else:
+            print('==> compute mean')
+            mean = torch.zeros(3)
+            std = torch.zeros(3)
+            cnt = 0
+            for sample in self.db:
+                cnt += 1
+                print('{} | {}'.format(cnt, len(self.db)))
+                img = load_BGR_image(sample['image'])  # CxHxW
+                mean += img.view(img.size(0), -1).mean(1)
+                std += img.view(img.size(0), -1).std(1)
+            mean /= len(self.db)
+            std /= len(self.db)
+            meanstd = {
+                'mean': mean,
+                'std': std,
+            }
+            torch.save(meanstd, self.meanstd_file)
+        if self.is_train:
+            print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
+            print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
+
+        return meanstd['mean'], meanstd['std']
 
     def _get_db(self):
         raise NotImplementedError
@@ -50,7 +89,7 @@ class JointsDataset(Dataset):
     def evaluate(self, cfg, preds, output_dir, *args, **kwargs):
         raise NotImplementedError
 
-    def __len__(self,):
+    def __len__(self):
         return len(self.db)
 
     def __getitem__(self, idx):
@@ -209,3 +248,116 @@ class JointsDataset(Dataset):
                     g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
 
         return target, target_weight
+
+
+class BaseCOCO(JointsDataset):
+    def __init__(self, is_train, **kwargs):
+        super().__init__(is_train, **kwargs)
+        self.image_width = self.image_height = kwargs['inp_res']
+        self.aspect_ratio = 1.0
+        self.pixel_std = 200
+        self.annos = None
+        self.image_set_index = None
+
+    def _load_image_set_index(self):
+        """ image id: int """
+        image_ids = self.annos.getImgIds()
+        return image_ids
+
+    def _get_db(self):
+        return self._load_coco_keypoint_annotations()
+
+    def _load_coco_keypoint_annotations(self):
+        """ ground truth bbox and keypoints """
+        gt_db = []
+        for index in self.image_set_index:
+            gt_db.extend(self._load_coco_keypoint_annotation_kernal(index))
+        return gt_db
+
+    def _load_coco_keypoint_annotation_kernal(self, index):
+        """
+        coco ann: [u'segmentation', u'area', u'iscrowd', u'image_id', u'bbox', u'category_id', u'id']
+        iscrowd:
+            crowd instances are handled by marking their overlaps with all categories to -1
+            and later excluded in training
+        bbox:
+            [x1, y1, w, h]
+        :param index: coco image id
+        :return: db entry
+        """
+        im_ann = self.annos.loadImgs(index)[0]
+        width = im_ann['width']
+        height = im_ann['height']
+
+        annIds = self.annos.getAnnIds(imgIds=index, iscrowd=False)
+        objs = self.annos.loadAnns(annIds)
+
+        # sanitize bboxes
+        valid_objs = []
+        for obj in objs:
+            x, y, w, h = obj['bbox']
+            x1 = np.max((0, x))
+            y1 = np.max((0, y))
+            x2 = np.min((width - 1, x1 + np.max((0, w - 1))))
+            y2 = np.min((height - 1, y1 + np.max((0, h - 1))))
+            if obj['area'] > 0 and x2 >= x1 and y2 >= y1:
+                # obj['clean_bbox'] = [x1, y1, x2, y2]
+                obj['clean_bbox'] = [x1, y1, x2-x1, y2-y1]
+                valid_objs.append(obj)
+        objs = valid_objs
+
+        rec = []
+        for obj in objs:
+
+            # ignore objs without keypoints annotation
+            if max(obj['keypoints']) == 0:
+                continue
+
+            joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+            joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
+            for ipt in range(self.num_joints):
+                joints_3d[ipt, 0] = obj['keypoints'][ipt * 3 + 0]
+                joints_3d[ipt, 1] = obj['keypoints'][ipt * 3 + 1]
+                joints_3d[ipt, 2] = 0
+                t_vis = obj['keypoints'][ipt * 3 + 2]
+                if t_vis > 1:
+                    t_vis = 1
+                joints_3d_vis[ipt, 0] = t_vis
+                joints_3d_vis[ipt, 1] = t_vis
+                joints_3d_vis[ipt, 2] = 0
+
+            center, scale = self._box2cs(obj['clean_bbox'][:4])
+            rec.append({
+                'image': self.image_path_from_index(index),
+                'center': center,
+                'scale': scale,
+                'joints_3d': joints_3d,
+                'joints_3d_vis': joints_3d_vis,
+                'imgnum': 0,
+            })
+
+        return rec
+
+    def _box2cs(self, box):
+        x, y, w, h = box[:4]
+        return self._xywh2cs(x, y, w, h)
+
+    def _xywh2cs(self, x, y, w, h):
+        center = np.zeros((2), dtype=np.float32)
+        center[0] = x + w * 0.5
+        center[1] = y + h * 0.5
+
+        if w > self.aspect_ratio * h:
+            h = w * 1.0 / self.aspect_ratio
+        elif w < self.aspect_ratio * h:
+            w = h * self.aspect_ratio
+        scale = np.array(
+            [w * 1.0 / self.pixel_std, h * 1.0 / self.pixel_std],
+            dtype=np.float32)
+        if center[0] != -1:
+            scale = scale * 1.25
+
+        return center, scale
+
+    def image_path_from_index(self, index):
+        raise NotImplementedError

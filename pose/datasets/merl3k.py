@@ -4,7 +4,7 @@
 # Written by Hoang Bui (hoang.bui@awl.com.vn)
 # ------------------------------------------------------------------------------
 
-# TODO: RGB conflict, openCV BGR, scipy in load_image RGB
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -14,9 +14,6 @@ import os
 import numpy as np
 from pycocotools.coco import COCO
 from pose.datasets.common import JointsDataset
-from pose.utils.imutils import load_BGR_image
-import torch
-from torchvision.transforms import transforms
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +25,13 @@ class MERL3K(JointsDataset):
         self.image_height = kwargs['inp_res']
         self.aspect_ratio = 1.0
         self.pixel_std = 200
+        self.meanstd_file = './data/merl3000/mean.pth.tar'
 
-
-        if self.is_train:
+        if is_train:
             self.annos = COCO(os.path.join(self.json, 'train_merl.json'))
         else:
             self.annos = COCO(os.path.join(self.json, 'test_merl.json'))
 
-        cats = [cat['name']
-                for cat in self.annos.loadCats(self.annos.getCatIds())]
-        self.classes = ['__background__'] + cats
-        logger.info('=> classes: {}'.format(self.classes))
-        self.num_classes = len(self.classes)
-        self._class_to_ind = dict(zip(self.classes, range(self.num_classes)))
-        self._class_to_coco_ind = dict(zip(cats, self.annos.getCatIds()))
-        self._coco_ind_to_class_ind = dict([(self._class_to_coco_ind[cls],
-                                             self._class_to_ind[cls])
-                                            for cls in self.classes[1:]])
         # load image file names
         self.image_set_index = self._load_image_set_index()
         self.num_images = len(self.image_set_index)
@@ -56,41 +43,8 @@ class MERL3K(JointsDataset):
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
-        mean = mean.tolist()
-        std = std.tolist()
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
-        ])
+        self._get_transformation(mean, std)
         logger.info('=> load {} samples'.format(len(self.db)))
-
-    def _compute_mean(self):
-        meanstd_file = './data/merl3000/mean.pth.tar'
-        if os.path.isfile(meanstd_file):
-            meanstd = torch.load(meanstd_file)
-        else:
-            print('==> compute mean')
-            mean = torch.zeros(3)
-            std = torch.zeros(3)
-            cnt = 0
-            for sample in self.db:
-                cnt += 1
-                print('{} | {}'.format(cnt, len(self.db)))
-                img = load_BGR_image(sample['image'])  # CxHxW
-                mean += img.view(img.size(0), -1).mean(1)
-                std += img.view(img.size(0), -1).std(1)
-            mean /= len(self.db)
-            std /= len(self.db)
-            meanstd = {
-                'mean': mean,
-                'std': std,
-                }
-            torch.save(meanstd, meanstd_file)
-        if self.is_train:
-            print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
-            print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
-
-        return meanstd['mean'], meanstd['std']
 
     def _load_image_set_index(self):
         """ image id: int """
@@ -134,17 +88,12 @@ class MERL3K(JointsDataset):
             x2 = np.min((width - 1, x1 + np.max((0, w - 1))))
             y2 = np.min((height - 1, y1 + np.max((0, h - 1))))
             if obj['area'] > 0 and x2 >= x1 and y2 >= y1:
-                # obj['clean_bbox'] = [x1, y1, x2, y2]
                 obj['clean_bbox'] = [x1, y1, x2-x1, y2-y1]
                 valid_objs.append(obj)
         objs = valid_objs
 
         rec = []
         for obj in objs:
-            cls = self._coco_ind_to_class_ind[obj['category_id']]
-            if cls != 1 or len(obj['keypoints']) != self.num_joints * 3:
-                continue
-
             # ignore objs without keypoints annotation
             if max(obj['keypoints']) == 0:
                 continue

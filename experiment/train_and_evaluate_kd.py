@@ -15,7 +15,7 @@ from pose.utils.logger import Logger
 from pose.utils.evaluation import accuracy, AverageMeter
 from pose.utils.misc import save_checkpoint, adjust_learning_rate
 import pose.models as models
-from pose.loss.loss import JointsMSELoss
+from pose.loss.mse import JointsMSELoss
 import pose.datasets as datasets
 from torchsummary import summary
 import datetime

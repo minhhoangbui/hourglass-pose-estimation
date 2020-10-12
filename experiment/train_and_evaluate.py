@@ -9,7 +9,6 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import datetime
-import re
 import sys
 from torch.utils.tensorboard import SummaryWriter
 
@@ -53,7 +52,7 @@ def train(train_loader, model, criterion, optimizer, pck, idxs=None):
     bar = Bar('Training', max=len(train_loader))
 
     for i, (inputs, target, meta) in enumerate(train_loader):
-        if len(idxs):
+        if idxs is not None:
             target = torch.index_select(target, 1, idxs)
         data_time.update(time.time() - end)
 
@@ -109,7 +108,7 @@ def validate(val_loader, model, criterion, pck, idxs=None):
     bar = Bar('Evaluating ', max=len(val_loader))
     with torch.no_grad():
         for i, (inputs, target, meta) in enumerate(val_loader):
-            if len(idxs):
+            if idxs is not None:
                 target = torch.index_select(target, 1, idxs)
 
             # measure data loading time
@@ -151,14 +150,11 @@ def validate(val_loader, model, criterion, pck, idxs=None):
 
 def main(cfg):
     global best_acc
-    idxs_str = str(cfg['MODEL']['subset'])
-    idxs_str = idxs_str.strip('[]')
-    idxs_str = re.sub(r'\s+', '', idxs_str)
     checkpoint_path = os.path.join(cfg['MISC']['checkpoint'],
                                    '{}_{}_s{}_{}_{}_{}'.format(cfg['DATASET']['name'], cfg['MODEL']['arch'],
                                                                cfg['MODEL']['num_stacks'],
                                                                'mobile' if cfg['MODEL']['mobile'] else 'non-mobile',
-                                                               'all' if len(cfg['MODEL']['subset']) == 0 else idxs_str,
+                                                               'all' if cfg['MODEL']['subset'] is None else cfg['MODEL']['subset'],
                                                                cfg['MODEL']['skip_mode']))
 
     if not os.path.isdir(checkpoint_path):
@@ -166,18 +162,18 @@ def main(cfg):
 
     # create model
 
-    n_joints = datasets.__dict__[cfg['DATASET']['name']].n_joints if len(cfg['MODEL']['subset']) == 0 else \
+    n_joints = datasets.__dict__[cfg['DATASET']['name']].n_joints if cfg['MODEL']['subset'] is None else \
         len(cfg['MODEL']['subset'])
 
     print("==> creating model '{}', stacks={}, blocks={}".format(cfg['MODEL']['arch'],
                                                                  cfg['MODEL']['num_stacks'],
                                                                  cfg['MODEL']['num_blocks']))
     o_model = models.__dict__[cfg['MODEL']['arch']](num_stacks=cfg['MODEL']['num_stacks'],
-                                                  num_blocks=cfg['MODEL']['num_blocks'],
-                                                  num_classes=n_joints,
-                                                  mobile=cfg['MODEL']['mobile'],
-                                                  skip_mode=cfg['MODEL']['skip_mode'],
-                                                  out_res=cfg['DATASET']['out_res'])
+                                                    num_blocks=cfg['MODEL']['num_blocks'],
+                                                    num_classes=n_joints,
+                                                    mobile=cfg['MODEL']['mobile'],
+                                                    skip_mode=cfg['MODEL']['skip_mode'],
+                                                    out_res=cfg['DATASET']['out_res'])
 
     summary(o_model, (3, cfg['DATASET']['inp_res'], cfg['DATASET']['inp_res']), device='cpu')
     writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'tensorboard'))
@@ -228,7 +224,7 @@ def main(cfg):
         num_workers=cfg['TRAIN']['num_workers'], pin_memory=True
     )
     idxs = cfg['MODEL']['subset']
-    if len(idxs):
+    if idxs is not None:
         idxs = torch.LongTensor(cfg['MODEL']['subset'])
 
     # evaluation only

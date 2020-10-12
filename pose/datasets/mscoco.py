@@ -61,7 +61,7 @@ class MSCOCO(BaseCOCO):
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
-        self.transform = self._get_transformation(mean, std)
+        self.transform = BaseCOCO._get_transformation(mean, std)
 
         # if is_train and cfg.DATASET.SELECT_DATA:
         #     self.db = self.select_data(self.db)

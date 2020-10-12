@@ -34,7 +34,7 @@ class Se7en11(BaseCOCO):
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
-        self._get_transformation(mean, std)
+        self.transform = BaseCOCO._get_transformation(mean, std)
 
         logger.info('=> load {} samples'.format(len(self.db)))
 

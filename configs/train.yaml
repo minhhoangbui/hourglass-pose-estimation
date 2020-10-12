@@ -1,11 +1,11 @@
 DATASET:
-  name: 'mpii'
-  image_path: '/mnt/hdd3tb/Datasets/MPII/images'
-  annotation_path: '/mnt/hdd3tb/Datasets/MPII/annotations'
+  name: 'mscoco'
+  image_path: '/mnt/hdd3tb/Datasets/COCO2017/images'
+  annotation_path: '/mnt/hdd3tb/Datasets/COCO2017/annotations'
   inp_res: 256
   out_res: 64
   flip: True
-  sigma: 0.1
+  sigma: 1
   scale_factor: 0.25
   rot_factor: 30
   label_type: 'Gaussian' # Gaussian or Cauchy
@@ -15,7 +15,7 @@ MODEL:
   num_blocks: 1
   mobile: True
   skip_mode: 'sum' # sum or concat
-  subset: []
+  subset: null
 TRAIN:
   num_workers: 4
   epochs: 80
@@ -30,8 +30,8 @@ TRAIN:
   sigma_decay: 0
 MISC:
   GPU: '0,1'
-  checkpoint: '/mnt/hdd3tb/Users/hoang/checkpoint/pose-estimation'
-  snapshot: 0
+  checkpoint: '/mnt/hdd3tb/Users/hoang/checkpoint/pose-estimation/test/'
+  snapshot: 10
   resume: ''
   evaluate: False
   pck: 0.5

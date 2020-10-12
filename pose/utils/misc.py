@@ -27,7 +27,7 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
 
-    if snapshot and state.epoch % snapshot == 0:
+    if snapshot and state['epoch'] % snapshot == 0:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'checkpoint_{}.pth.tar'.format(state.epoch)))
 
     if is_best:

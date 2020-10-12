@@ -1,4 +1,4 @@
-from .mpii_ import mpii
+from .mpii import mpii
 from .mscoco import mscoco
 from .merl3k import merl3k
 # from .crowdpose import crowdpose

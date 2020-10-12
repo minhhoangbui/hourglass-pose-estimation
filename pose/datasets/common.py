@@ -48,9 +48,14 @@ class JointsDataset(Dataset):
         self.transform = None
         self.meanstd_file = None
 
-    def _get_transformation(self, mean, std):
+    def _get_db(self):
+        raise NotImplementedError
+
+    @staticmethod
+    def _get_transformation(mean, std):
         mean = mean.tolist()
         std = std.tolist()
+
         return transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
@@ -75,16 +80,13 @@ class JointsDataset(Dataset):
             meanstd = {
                 'mean': mean,
                 'std': std,
-            }
+                }
             torch.save(meanstd, self.meanstd_file)
         if self.is_train:
             print('    Mean: %.4f, %.4f, %.4f' % (meanstd['mean'][0], meanstd['mean'][1], meanstd['mean'][2]))
             print('    Std:  %.4f, %.4f, %.4f' % (meanstd['std'][0], meanstd['std'][1], meanstd['std'][2]))
 
         return meanstd['mean'], meanstd['std']
-
-    def _get_db(self):
-        raise NotImplementedError
 
     def evaluate(self, cfg, preds, output_dir, *args, **kwargs):
         raise NotImplementedError

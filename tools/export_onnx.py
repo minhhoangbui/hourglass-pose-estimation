@@ -8,6 +8,7 @@ import torch
 import torch.nn.parallel
 import torch.optim
 import os
+from torchsummary import summary
 
 import pose.models as models
 import experiment._init_path
@@ -20,8 +21,10 @@ model_names = sorted(name for name in models.__dict__
 def main(args):
 
     print("==> creating model '{}', stacks={}, blocks={}".format(args.arch, args.stacks, args.blocks))
-    model = models.__dict__[args.arch](num_stacks=args.stacks, num_blocks=args.blocks, num_classes=args.num_classes,
-                                       mobile=args.mobile, skip_mode=None)
+    model = models.__dict__[args.arch](num_stacks=args.stacks, num_blocks=args.blocks,
+                                       num_classes=args.num_classes,
+                                       mobile=args.mobile, skip_mode=args.skip_mode)
+    summary(model, (3, args.in_res, args.in_res), device='cpu')
     model.eval()
 
     # optionally resume from a checkpoint
@@ -48,6 +51,7 @@ def main(args):
         print("=> no checkpoint found at '{}'".format(args.checkpoint))
 
     dummy_input = torch.randn(1, 3, args.in_res, args.in_res)
+
     torch.onnx.export(model, dummy_input, args.out_onnx, opset_version=10)
 
 

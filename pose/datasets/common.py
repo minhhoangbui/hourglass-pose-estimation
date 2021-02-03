@@ -24,6 +24,8 @@ from pose.utils.ms_transforms import affine_transform
 from pose.utils.ms_transforms import fliplr_joints
 from pose.utils.imutils import load_BGR_image
 
+# TODO: imgnum for what?
+
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +238,6 @@ class JointsDataset(Dataset):
             x0 = y0 = size // 2
             # The gaussian is not normalized, we want the center value to equal 1
             g = np.exp(- ((x - x0) ** 2 + (y - y0) ** 2) / (2 * self.sigma ** 2))
-
             # Usable gaussian range
             g_x = max(0, -ul[0]), min(br[0], self.heatmap_size[0]) - ul[0]
             g_y = max(0, -ul[1]), min(br[1], self.heatmap_size[1]) - ul[1]

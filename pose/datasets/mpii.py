@@ -182,3 +182,23 @@ def mpii(**kwargs):
 
 mpii.n_joints = 16
 
+if __name__ == '__main__':
+    cfgs = {
+        'image_path': '/mnt/hdd3tb/Datasets/MPII/images',
+        'annotation_path': '/mnt/hdd3tb/Datasets/MPII/annotations',
+        'inp_res': 256,
+        'out_res': 64,
+        'flip': True,
+        'sigma': 1,
+        'scale_factor': 0.25,
+        'rot_factor': 30,
+        'label_type': 'Gaussian'  # Gaussian or Cauchy
+    }
+    from torch.utils import data
+    dataset = MPII(True, **cfgs)
+    dataloader = data.DataLoader(dataset, batch_size=14)
+
+    for image, target, _ in dataloader:
+        print(image.size())
+        print(target.size())
+

@@ -1,7 +1,7 @@
 DATASET:
-  name: 'mscoco'
-  image_path: '/mnt/hdd3tb/Datasets/COCO2017/images'
-  annotation_path: '/mnt/hdd3tb/Datasets/COCO2017/annotations'
+  name: 'hands'
+  image_path: '/mnt/ssd2/BACKUP/Datasets/COCO2017/images'
+  annotation_path: './data/hands/'
   inp_res: 256
   out_res: 64
   flip: True
@@ -18,10 +18,10 @@ MODEL:
   subset: null
 TRAIN:
   num_workers: 4
-  epochs: 80
+  epochs: 90
   start_epoch: 0
-  train_batch: 96
-  test_batch: 96
+  train_batch: 64
+  test_batch: 64
   learning_rate: 0.0025
   momentum: 0
   weight_decay: 0
@@ -29,9 +29,9 @@ TRAIN:
   gamma: 0.1
   sigma_decay: 0
 MISC:
-  GPU: '0,1'
-  checkpoint: '/mnt/hdd3tb/Users/hoang/checkpoint/pose-estimation/test/'
+  checkpoint: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/'
   snapshot: 10
-  resume: ''
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/hands_hg_s2_mobile_all_sum/model_best.pth.tar'
   evaluate: False
   pck: 0.5
+  out_onnx: '/home/hoangbm/hands.onnx'

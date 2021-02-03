@@ -57,6 +57,7 @@ def train(train_loader, model, criterion, optimizer, pck, idxs=None):
         data_time.update(time.time() - end)
 
         inputs, target = inputs.to(device), target.to(device, non_blocking=True)
+
         target_weight = meta['target_weight'].to(device, non_blocking=True)
 
         # compute output
@@ -192,7 +193,7 @@ def main(cfg):
         if os.path.isfile(cfg['MISC']['resume']):
             print("=> loading checkpoint '{}'".format(cfg['MISC']['resume']))
             checkpoint = torch.load(cfg['MISC']['resume'])
-            cfg.start_epoch = checkpoint['epoch']
+            cfg['TRAIN']['start_epoch'] = checkpoint['epoch']
             best_acc = checkpoint['best_acc']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
@@ -208,6 +209,10 @@ def main(cfg):
             logger = Logger(os.path.join(checkpoint_path, 'log.txt'), title=title, resume=False)
         logger.set_names(['Time', 'Epoch', 'LR', 'Train Loss', 'Val Loss',
                           'Train Acc', 'Val Acc'])
+    if cfg['MISC']['out_onnx'] and cfg['MISC']['resume']:
+        dummy_input = torch.randn(1, 3, cfg['DATASET']['inp_res'], cfg['DATASET']['inp_res'], device='cuda')
+        torch.onnx.export(model.module, dummy_input, cfg['MISC']['out_onnx'], opset_version=10)
+        exit()
 
     # create data loader
     train_dataset = datasets.__dict__[cfg['DATASET']['name']](is_train=True, **cfg['DATASET'])
@@ -285,7 +290,6 @@ if __name__ == '__main__':
     config = sys.argv[1]
     with open(config, 'r') as fp:
         cfg = yaml.full_load(fp)
-    os.environ['CUDA_VISIBLE_DEVICES'] = cfg['MISC']['GPU']
     main(cfg)
 
 

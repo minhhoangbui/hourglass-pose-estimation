@@ -33,7 +33,7 @@ class Wrist(BaseCOCO):
 
         self.db = self._get_db()
         mean, std = self._compute_mean()
-        self._get_transformation(mean, std)
+        self.transform = self._get_transformation(mean, std)
 
         logger.info('=> load {} samples'.format(len(self.db)))
 

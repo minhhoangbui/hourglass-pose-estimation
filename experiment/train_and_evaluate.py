@@ -249,7 +249,7 @@ def main(cfg):
         # decay sigma
         if cfg['TRAIN']['sigma_decay']:
             train_loader.dataset.sigma *= cfg['TRAIN']['sigma_decay']
-            val_loader.dataset.sigma *= cfg['TRAIN']['sigma_decay']
+            # val_loader.dataset.sigma *= cfg['TRAIN']['sigma_decay']
 
         # train for one epoch
         train_loss, train_acc = train(train_loader=train_loader, model=model,

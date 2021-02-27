@@ -1,7 +1,7 @@
 DATASET:
-  name: 'hands'
+  name: 'mscoco'
   image_path: '/mnt/ssd2/BACKUP/Datasets/COCO2017/images'
-  annotation_path: './data/hands/'
+  annotation_path: '/mnt/ssd2/BACKUP/Datasets/COCO2017/annotations/'
   inp_res: 256
   out_res: 64
   flip: True
@@ -14,24 +14,24 @@ MODEL:
   num_stacks: 2
   num_blocks: 1
   mobile: True
-  skip_mode: 'sum' # sum or concat
+  skip_mode: 'concat' # sum or concat
   subset: null
 TRAIN:
-  num_workers: 4
+  num_workers: 8
   epochs: 90
   start_epoch: 0
-  train_batch: 64
-  test_batch: 64
+  train_batch: 96
+  test_batch: 96
   learning_rate: 0.0025
   momentum: 0
   weight_decay: 0
-  schedule: [50, 65]
+  schedule: [50, 70]
   gamma: 0.1
   sigma_decay: 0
 MISC:
   checkpoint: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/'
   snapshot: 10
-  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/hands_hg_s2_mobile_all_sum/model_best.pth.tar'
-  evaluate: False
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/mscoco_hg_s2_mobile_all_concat/model_best.pth.tar'
+  evaluate: True
   pck: 0.5
-  out_onnx: '/home/hoangbm/hands.onnx'
+  out_onnx: False

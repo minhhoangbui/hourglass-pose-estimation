@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 import torch.nn.functional as F
 from pose.loss.mse import MSELoss
 
@@ -60,7 +61,7 @@ class Hourglass(nn.Module):
         if skip_mode == 'concat':
             self.concat_conv = nn.Conv2d(in_channels=planes * block.expansion * 2,
                                          out_channels=planes * block.expansion,
-                                         kernel_size=1, padding=0)
+                                         kernel_size=1, padding=0, groups=2)
 
     def _make_residual(self, block, num_blocks, planes):
         layers = []

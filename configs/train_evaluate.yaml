@@ -1,0 +1,33 @@
+DATASET:
+  name: 'merl3k'
+  image_path: '/mnt/ssd2/BACKUP/Datasets/MERL3000/images'
+  annotation_path: '/mnt/ssd2/BACKUP/Datasets/MERL3000/annotations/annotations/settings/1'
+  inp_res: 256
+  out_res: 64
+  flip: True
+  sigma: 1
+  scale_factor: 0.25
+  rot_factor: 30
+  label_type: 'Gaussian' # Gaussian or Cauchy
+MODEL:
+  arch: 'hg'
+  num_stacks: 2
+  mobile: True
+  skip_mode: 'sum' # sum or concat
+  subset: null
+COMMON:
+  checkpoint_dir: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests'
+  snapshot: 10
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests/mpii_hg_s2_mobile_all/ckpts/'
+  evaluate_only: False
+  pck: 0.2
+  gpu: '3,4,5'
+TRAIN:
+  num_workers: 8
+  epochs: 50
+  start_epoch: 0
+  train_batch: 96
+  val_batch: 64
+  learning_rate: 0.0025
+  schedule: [35, 45]
+  gamma: 0.1

@@ -10,7 +10,7 @@ import torch.optim
 import os
 from torchsummary import summary
 
-import pose.models as models
+import src.models as models
 import experiment._init_path
 
 model_names = sorted(name for name in models.__dict__

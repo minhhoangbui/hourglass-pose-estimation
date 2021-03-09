@@ -1,0 +1,101 @@
+import numpy as np
+import cv2
+import math
+import torch
+from src.utils.evaluation import get_preds
+from src.utils.transforms import transform_preds
+
+
+def taylor(hm, coord):
+    heatmap_height = hm.shape[0]
+    heatmap_width = hm.shape[1]
+    px = int(coord[0])
+    py = int(coord[1])
+    if 1 < px < heatmap_width-2 and 1 < py < heatmap_height-2:
+        dx = 0.5 * (hm[py][px+1] - hm[py][px-1])
+        dy = 0.5 * (hm[py+1][px] - hm[py-1][px])
+        dxx = 0.25 * (hm[py][px+2] - 2 * hm[py][px] + hm[py][px-2])
+        dxy = 0.25 * (hm[py+1][px+1] - hm[py-1][px+1] - hm[py+1][px-1] + hm[py-1][px-1])
+        dyy = 0.25 * (hm[py+2*1][px] - 2 * hm[py][px] + hm[py-2*1][px])
+        derivative = np.array([[dx], [dy]])
+        hessian = np.array([[dxx, dxy], [dxy, dyy]])
+        if dxx * dyy - dxy ** 2 != 0:
+            inv_hessian = np.linalg.inv(hessian)
+            offset = - inv_hessian * derivative
+            offset = np.squeeze(np.array(offset.T), axis=0)
+            coord += offset
+    return coord
+
+
+def gaussian_blur(hm, kernel=11):
+    border = (kernel - 1) // 2
+    batch_size = hm.shape[0]
+    num_joints = hm.shape[1]
+    height = hm.shape[2]
+    width = hm.shape[3]
+    for i in range(batch_size):
+        for j in range(num_joints):
+            origin_max = np.max(hm[i, j])
+            dr = np.zeros((height + 2 * border, width + 2 * border))
+            dr[border: -border, border: -border] = hm[i, j].copy()
+            dr = cv2.GaussianBlur(dr, (kernel, kernel), 0)
+            hm[i, j] = dr[border: -border, border: -border].copy()
+            hm[i, j] *= origin_max / np.max(hm[i, j])
+    return hm
+
+
+def get_final_preds_v1(hms, center, scale, output_size):
+    coords = get_preds(hms)  # float type
+
+    # pose-processing
+    for n in range(coords.size(0)):
+        for p in range(coords.size(1)):
+            hm = hms[n][p]
+            px = int(math.floor(coords[n][p][0] + 0.5))
+            py = int(math.floor(coords[n][p][1] + 0.5))
+            if 1 < px < output_size[0] - 1 and 1 < py < output_size[1] - 1:
+                diff = torch.Tensor([hm[py][px + 1] - hm[py][px - 1], hm[py + 1][px] - hm[py - 1][px]])
+                coords[n][p] += diff.sign() * .25
+    coords += 0.5
+    preds = coords.clone()
+
+    # Transform back
+    for i in range(coords.size(0)):
+        preds[i] = transform_preds(coords[i], center[i], scale[i], output_size)
+
+    if preds.dim() < 3:
+        preds = preds.view(1, preds.size())
+
+    return preds
+
+
+def get_final_preds_v2(hms, center, scale, output_size):
+    coords = get_preds(hms)
+
+    # post-processing
+    hms = gaussian_blur(hms)
+    hms = np.maximum(hms, 1e-10)
+    hms = np.log(hms)
+
+    for n in range(coords.shape[0]):
+        for p in range(coords.shape[1]):
+            coords[n, p] = taylor(hms[n][p], coords[n][p])
+
+    preds = coords.copy()
+
+    # Transform back
+    for i in range(coords.shape[0]):
+        preds[i] = transform_preds(
+            coords[i], center[i], scale[i], output_size
+        )
+    return preds
+
+
+if __name__ == '__main__':
+    hms = torch.randn((4, 17, 64, 64))
+    center = [[32, 32] for _ in range(4)]
+    scale = [[0.5, 0.5] for _ in range(4)]
+    output_size = [256, 256]
+    preds = get_final_preds_v1(hms, center, scale, output_size)
+    for pred in preds:
+        print(pred.size())

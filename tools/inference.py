@@ -9,14 +9,15 @@ import torch
 import cv2
 from collections import OrderedDict
 import experiment._init_path
-from pose.models.hourglass import Bottleneck, HourglassNet
+from src.models.hourglass import HourglassNet
+from src.models.modules import HGBottleneck
 import numpy as np
 import time
 
 
 class PosePredictor:
     def __init__(self, args):
-        self.model = HourglassNet(Bottleneck, num_stacks=args['num_stacks'], num_blocks=args['num_blocks'],
+        self.model = HourglassNet(HGBottleneck, num_stacks=args['num_stacks'], num_blocks=args['num_blocks'],
                                   num_classes=args['num_classes'], mobile=args['mobile'])
         self.bbox = args['bbox']
         self.dataset = args['dataset']

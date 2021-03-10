@@ -14,24 +14,24 @@ MODEL:
   num_stacks: 2
   num_blocks: 1
   mobile: True
-  skip_mode: 'concat' # sum or concat
+  skip_mode: 'sum' # sum or concat
   subset: null
 TRAIN:
   num_workers: 8
   epochs: 90
   start_epoch: 0
   train_batch: 96
-  test_batch: 96
+  test_batch: 64
   learning_rate: 0.0025
   momentum: 0
   weight_decay: 0
-  schedule: [50, 70]
+  schedule: [40, 60]
   gamma: 0.1
   sigma_decay: 0
 MISC:
-  checkpoint: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/'
+  checkpoint: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/test2'
   snapshot: 10
-  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/mscoco_hg_s2_mobile_all_concat/model_best.pth.tar'
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests/mscoco_hg_s2_mobile_all/checkpoint_90.pth.tar'
   evaluate: True
   pck: 0.5
   out_onnx: False

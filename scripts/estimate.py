@@ -1,7 +1,7 @@
 import sys
 import yaml
+import os
 import cv2
-from src.runner.estimator import Estimator
 
 
 def predict(cfg):
@@ -17,5 +17,7 @@ def predict(cfg):
 if __name__ == '__main__':
     config = sys.argv[1]
     with open(config, 'r') as fp:
-        cfg = yaml.full_load(config)
+        cfg = yaml.full_load(fp)
+    os.environ['CUDA_VISIBLE_DEVICES'] = cfg['COMMON']['gpu']
+    from src.runner.estimator import Estimator
     predict(cfg)

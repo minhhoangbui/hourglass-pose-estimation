@@ -1,0 +1,15 @@
+MODEL:
+  arch: 'hg'
+  num_stacks: 2
+  mobile: True
+  skip_mode: 'sum' # sum or concat
+  num_classes: 17
+  subset: null
+COMMON:
+  gpu: ''
+  image_path: 'scripts/i1.jpeg'
+  dest_path: 'scripts/test.jpeg'
+  out_res: 64
+  in_res: 256
+  dataset: 'mscoco'
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests/mscoco_hg_s2_mobile_all/ckpts/checkpoint_f80.pth.tar'

@@ -3,7 +3,9 @@ import os
 import time
 import numpy as np
 import cv2
+from collections import OrderedDict
 from src import models
+from src.utils.inference import get_final_preds_v1, get_final_preds_v2
 
 
 class Estimator:
@@ -11,19 +13,24 @@ class Estimator:
         print(f"==> creating model '{cfg['MODEL']['arch']}', stacks={cfg['MODEL']['num_stacks']}")
 
         self.model = models.__dict__[cfg['MODEL']['arch']](num_stacks=cfg['MODEL']['num_stacks'],
-                                                      num_blocks=1,
-                                                      num_classes=cfg['MODEL']['num_classes'],
-                                                      mobile=cfg['MODEL']['mobile'],
-                                                      skip_mode=cfg['MODEL']['skip_mode'],
-                                                      out_res=cfg['DATASET']['out_res'])
+                                                           num_blocks=1,
+                                                           num_classes=cfg['MODEL']['num_classes'],
+                                                           mobile=cfg['MODEL']['mobile'],
+                                                           skip_mode=cfg['MODEL']['skip_mode'],
+                                                           out_res=cfg['COMMON']['out_res'])
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.dataset = cfg['COMMON']['dataset']
-        self.input_size = cfg['COMMON']['input_size']
+        self.input_size = (cfg['COMMON']['in_res'], cfg['COMMON']['in_res'])
         self.threshold = 0.02
 
         if os.path.isfile(cfg['COMMON']['resume']):
-            checkpoint = torch.load(cfg['COMMON']['resume'])
-            self.model.load_state_dict(checkpoint['state_dict'])
+            checkpoint = torch.load(cfg['COMMON']['resume'], map_location=self.device)
+            loaded_dict = OrderedDict()
+            for k, v in checkpoint['state_dict'].items():
+                loaded_dict[k[7:]] = v
+            self.model.load_state_dict(loaded_dict)
+
+            print(f"Loaded model {cfg['COMMON']['resume']}")
             self.model.to(self.device)
             self.model.eval()
         else:
@@ -46,34 +53,41 @@ class Estimator:
         in_frame = torch.from_numpy(in_frame).float().to(self.device)
         return in_frame
 
-    def post_process_heatmap(self, heatmap):
+    def post_process_heatmap_v1(self, heatmaps, output_size):
         if self.device == torch.device('cuda'):
-            heatmap = heatmap.cpu().numpy()
+            heatmaps = heatmaps.cpu().numpy()[0]
+        else:
+            heatmaps = heatmaps.numpy()[0]
         kplst = []
-        for i in range(heatmap.shape[0]):
-            _map = heatmap[i, :, :]
+        for i in range(heatmaps.shape[0]):
+            _map = heatmaps[i, :, :]
             ind = np.unravel_index(np.argmax(_map), _map.shape)
             if _map[ind] > self.threshold:
                 kplst.append((int(ind[1]), int(ind[0]), _map[ind]))
             else:
                 kplst.append((0, 0, 0))
         kplst = np.array(kplst)
-        return kplst
+        scale_x = output_size[0] * 1.0 / self.input_size[0]
+        scale_y = output_size[1] * 1.0 / self.input_size[1]
+        kps = [kplst[:, 0] * scale_x * 4, kplst[:, 1] * scale_y * 4]
+        kps = np.asarray(kps, dtype=np.int).transpose()
+        return kps
+
+    @staticmethod
+    def post_process_heatmap_v2(heatmap, output_size):
+        center = np.array([round(output_size[0] * 0.5), round(output_size[1] * 0.5)])
+        scale = np.array([output_size[0] * 4.0 / 200 / heatmap.shape[2],
+                          output_size[1] * 4.0 / 200 / heatmap.shape[3]])
+        kps = get_final_preds_v1(heatmap, center, scale, output_size)
+        return kps.astype(np.int)
 
     def run(self, frame):
         in_frame = self.preprocess_bbox(frame)
+
         start = time.time()
-        if self.device == 'cpu':
-            heatmap = self.model(in_frame)[-1].cpu().detach().numpy()[0]
-        else:
-            heatmap = self.model(in_frame)[-1].detach()[0]
+        heatmaps = self.model(in_frame)[-1].detach()
         end = time.time()
-        print("Inference time on %s: %0.3f" % (self.device, end - start))
-        kps = self.post_process_heatmap(heatmap)
+        print(f"Inference time on {self.device}: %0.3f" % (end - start))
 
-        scale_x = frame.shape[1] * 1.0 / self.input_size[0]
-        scale_y = frame.shape[0] * 1.0 / self.input_size[1]
-        kps = [kps[:, 0] * scale_x * 4, kps[:, 1] * scale_y * 4]
-
-        kps = np.asarray(kps, dtype=np.float16).transpose()
+        kps = self.post_process_heatmap_v2(heatmaps, (frame.shape[1], frame.shape[0]))
         return kps

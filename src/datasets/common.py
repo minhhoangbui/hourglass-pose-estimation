@@ -299,7 +299,6 @@ class BaseCOCO(JointsDataset):
             x2 = np.min((width - 1, x1 + np.max((0, w - 1))))
             y2 = np.min((height - 1, y1 + np.max((0, h - 1))))
             if obj['area'] > 0 and x2 >= x1 and y2 >= y1:
-                # obj['clean_bbox'] = [x1, y1, x2, y2]
                 obj['clean_bbox'] = [x1, y1, x2-x1, y2-y1]
                 valid_objs.append(obj)
         objs = valid_objs
@@ -340,7 +339,7 @@ class BaseCOCO(JointsDataset):
         return self._xywh2cs(x, y, w, h)
 
     def _xywh2cs(self, x, y, w, h):
-        center = np.zeros((2), dtype=np.float32)
+        center = np.zeros(2, dtype=np.float32)
         center[0] = x + w * 0.5
         center[1] = y + h * 0.5
 

@@ -21,7 +21,8 @@ def taylor(hm, coord):
         hessian = np.array([[dxx, dxy], [dxy, dyy]])
         if dxx * dyy - dxy ** 2 != 0:
             inv_hessian = np.linalg.inv(hessian)
-            offset = - inv_hessian * derivative
+            # offset = - inv_hessian * derivative
+            offset = - np.dot(inv_hessian, derivative)
             offset = np.squeeze(np.array(offset.T), axis=0)
             coord += offset
     return coord
@@ -45,49 +46,44 @@ def gaussian_blur(hm, kernel=11):
 
 
 def get_final_preds_v1(hms, center, scale, output_size):
-    coords = get_preds(hms)  # float type
+    coords = get_preds(hms)[0]  # float type
+    heatmap_height = hms.shape[2]
+    heatmap_width = hms.shape[3]
 
     # pose-processing
-    for n in range(coords.size(0)):
-        for p in range(coords.size(1)):
-            hm = hms[n][p]
-            px = int(math.floor(coords[n][p][0] + 0.5))
-            py = int(math.floor(coords[n][p][1] + 0.5))
-            if 1 < px < output_size[0] - 1 and 1 < py < output_size[1] - 1:
-                diff = torch.Tensor([hm[py][px + 1] - hm[py][px - 1], hm[py + 1][px] - hm[py - 1][px]])
-                coords[n][p] += diff.sign() * .25
-    coords += 0.5
-    preds = coords.clone()
+    for p in range(coords.size(0)):
+        hm = hms[0][p]
+        px = int(math.floor(coords[p][0] + 0.5))
+        py = int(math.floor(coords[p][1] + 0.5))
+        if 1 < px < heatmap_width - 1 and 1 < py < heatmap_height - 1:
+            diff = torch.Tensor([hm[py - 1][px] - hm[py - 1][px - 2],
+                                 hm[py][px - 1] - hm[py - 2][px - 1]])
+            coords[p] += diff.sign() * .25
+    # coords += 0.5
 
     # Transform back
-    for i in range(coords.size(0)):
-        preds[i] = transform_preds(coords[i], center[i], scale[i], output_size)
-
-    if preds.dim() < 3:
-        preds = preds.view(1, preds.size())
+    preds = transform_preds(coords, center, scale, output_size)
 
     return preds
 
 
 def get_final_preds_v2(hms, center, scale, output_size):
-    coords = get_preds(hms)
+    coords = get_preds(hms)[0]
+    hms = hms.numpy()
 
     # post-processing
     hms = gaussian_blur(hms)
     hms = np.maximum(hms, 1e-10)
     hms = np.log(hms)
 
-    for n in range(coords.shape[0]):
-        for p in range(coords.shape[1]):
-            coords[n, p] = taylor(hms[n][p], coords[n][p])
-
-    preds = coords.copy()
+    for p in range(coords.shape[1]):
+        coords[p] = taylor(hms[0][p], coords[p])
 
     # Transform back
-    for i in range(coords.shape[0]):
-        preds[i] = transform_preds(
-            coords[i], center[i], scale[i], output_size
-        )
+
+    preds = transform_preds(
+        coords, center, scale, output_size
+    )
     return preds
 
 
@@ -96,6 +92,6 @@ if __name__ == '__main__':
     center = [[32, 32] for _ in range(4)]
     scale = [[0.5, 0.5] for _ in range(4)]
     output_size = [256, 256]
-    preds = get_final_preds_v1(hms, center, scale, output_size)
+    preds = get_final_preds_v1(hms, center, scale)
     for pred in preds:
         print(pred.size())

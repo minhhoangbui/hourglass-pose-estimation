@@ -1,7 +1,7 @@
 DATASET:
-  name: 'merl3k'
-  image_path: '/mnt/ssd2/BACKUP/Datasets/MERL3000/images'
-  annotation_path: '/mnt/ssd2/BACKUP/Datasets/MERL3000/annotations/annotations/settings/1'
+  name: 'mscoco'
+  image_path: '/mnt/ssd2/BACKUP/Datasets/COCO2017/images'
+  annotation_path: '/mnt/ssd2/BACKUP/Datasets/COCO2017/annotations/'
   inp_res: 256
   out_res: 64
   flip: True
@@ -18,9 +18,9 @@ MODEL:
 COMMON:
   checkpoint_dir: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests'
   snapshot: 10
-  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests/mpii_hg_s2_mobile_all/ckpts/'
-  evaluate_only: False
-  pck: 0.2
+  resume: '/mnt/hdd10tb/Users/hoangbm/checkpoint/pose-estimation/hourglass/tests/mscoco_hg_s2_mobile_all/ckpts/checkpoint_f80.pth.tar'
+  evaluate_only: True
+  pck: 0.5
   gpu: '3,4,5'
 TRAIN:
   num_workers: 8

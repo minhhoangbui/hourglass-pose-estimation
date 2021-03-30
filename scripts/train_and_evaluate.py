@@ -35,12 +35,13 @@ def val(cfg):
                                                   mobile=cfg['MODEL']['mobile'],
                                                   skip_mode=cfg['MODEL']['skip_mode'],
                                                   out_res=cfg['DATASET']['out_res'])
-    # summary(model, (3, cfg['DATASET']['inp_res'], cfg['DATASET']['inp_res']), device='cpu')
+    summary(model, (3, cfg['DATASET']['inp_res'], cfg['DATASET']['inp_res']), device='cpu')
     model = torch.nn.DataParallel(model).to(device)
     if os.path.isfile(cfg['COMMON']['resume']):
         from src.runner.evaluator import Evaluator
         checkpoint = torch.load(cfg['COMMON']['resume'])
         model.load_state_dict(checkpoint['state_dict'])
+        print(f"Loaded model {cfg['COMMON']['resume']}")
         evaluator = Evaluator(device, cfg)
         _, _ = evaluator.evaluate(model)
 

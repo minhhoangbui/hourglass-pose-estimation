@@ -30,5 +30,11 @@
 ### Training and Testing
 
 ```bash
-bash experiment/train_and_evaluate.sh
+python scripts/train_and_evaluate.py configs/train_evaluate.yaml
+```
+
+### Inference
+
+```bash
+python scripts/estimate.py configs/inference.yaml
 ```

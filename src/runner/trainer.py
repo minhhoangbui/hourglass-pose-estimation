@@ -144,6 +144,9 @@ class Trainer(object):
         return average_loss.avg, average_acc.avg, is_best
 
     def train(self):
+        only_checkpoint_path = os.path.join(self.cfg['COMMON']['checkpoint_dir'], 'ckpts')
+        if not os.path.isdir(only_checkpoint_path):
+            os.makedirs(only_checkpoint_path)
 
         lr = self.cfg['TRAIN']['learning_rate']
         for epoch in range(self.start_epoch, self.cfg['TRAIN']['epochs'] + 1):
@@ -161,10 +164,8 @@ class Trainer(object):
             self.writer.add_scalar('Accuracy/val', val_acc, epoch)
 
             if (epoch+1) % self.cfg['COMMON']['snapshot'] == 0 or is_best:
-                only_checkpoint_path = os.path.join(self.cfg['COMMON']['checkpoint_dir'], 'ckpts')
                 file_path = os.path.join(only_checkpoint_path, f'checkpoint_{epoch+1}.pth.tar')
-                if not os.path.isdir(only_checkpoint_path):
-                    os.makedirs(only_checkpoint_path)
+                
                 state = {
                     'epoch': epoch + 1,
                     'state_dict': self.model.state_dict(),
